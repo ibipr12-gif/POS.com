@@ -1,0 +1,2135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Workshop Ledger — Stock & Billing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F1EBE0;
+    --surface:#FFFFFF;
+    --surface-2:#FBF7F0;
+    --ink:#2B2016;
+    --ink-soft:#6B5D4D;
+    --walnut:#6B4A34;
+    --walnut-dark:#4A3223;
+    --brass:#B08D57;
+    --teal:#3F6259;
+    --teal-dark:#2E4A42;
+    --danger:#B3452C;
+    --danger-bg:#FBEAE4;
+    --border:#E2D5C1;
+    --radius:10px;
+    --shadow:0 2px 8px rgba(43,32,22,0.08);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Public Sans',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding-bottom:60px;
+  }
+  h1,h2,h3{font-family:'Fraunces',serif;font-weight:600;margin:0;color:var(--walnut-dark);}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;font-size:15px;}
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    background:var(--walnut-dark);
+    color:#F1EBE0;
+    padding:16px 20px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .topbar .brand{display:flex;flex-direction:column;}
+  .topbar .brand h1{color:#F8F2E8;font-size:22px;letter-spacing:0.2px;}
+  .topbar .brand .tagline{font-size:12px;color:#CBB89A;font-family:'Public Sans';margin-top:2px;}
+  .topbar .date{font-size:13px;color:#D8C9AE;}
+
+  /* stitched divider - signature element */
+  .stitch{
+    border:none;
+    border-top:2px dashed var(--brass);
+    opacity:0.5;
+    margin:0;
+  }
+
+  /* ---------- Tabs ---------- */
+  .tabs{
+    display:flex;
+    gap:8px;
+    padding:14px 16px 0 16px;
+    overflow-x:auto;
+    background:var(--bg);
+    position:sticky;
+    top:0;
+    z-index:20;
+  }
+  .tab-btn{
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-bottom:none;
+    padding:12px 18px;
+    border-radius:10px 10px 0 0;
+    font-weight:600;
+    font-size:14.5px;
+    color:var(--ink-soft);
+    white-space:nowrap;
+    position:relative;
+    flex-shrink:0;
+  }
+  .tab-btn.active{
+    background:var(--surface);
+    color:var(--walnut-dark);
+    border-color:var(--brass);
+  }
+  .tab-btn.active::after{
+    content:"";
+    position:absolute;
+    left:8px;right:8px;top:6px;
+    border-top:1.5px dashed var(--brass);
+    opacity:0.6;
+  }
+  .tab-btn .badge{
+    background:var(--danger);
+    color:#fff;
+    font-size:11px;
+    font-weight:700;
+    border-radius:20px;
+    padding:1px 7px;
+    margin-left:6px;
+  }
+  .tab-btn .badge.warn{background:var(--brass);}
+
+  .panel{
+    background:var(--surface);
+    margin:0 16px 16px 16px;
+    padding:22px;
+    border-radius:0 10px 10px 10px;
+    box-shadow:var(--shadow);
+    border:1px solid var(--border);
+  }
+  .panel-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:16px;
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn{
+    border-radius:8px;
+    border:1px solid transparent;
+    padding:11px 18px;
+    font-weight:600;
+    font-size:14.5px;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+  }
+  .btn-primary{background:var(--walnut);color:#fff;}
+  .btn-primary:hover{background:var(--walnut-dark);}
+  .btn-teal{background:var(--teal);color:#fff;}
+  .btn-teal:hover{background:var(--teal-dark);}
+  .btn-outline{background:transparent;border-color:var(--border);color:var(--ink);}
+  .btn-outline:hover{border-color:var(--walnut);}
+  .btn-danger{background:transparent;color:var(--danger);border-color:var(--danger-bg);}
+  .btn-danger:hover{background:var(--danger-bg);}
+  .btn-brass{background:var(--brass);color:#fff;}
+  .btn-brass:hover{background:#96754A;}
+  .btn-sm{padding:7px 12px;font-size:13px;}
+  .btn:disabled{opacity:0.45;cursor:not-allowed;}
+
+  /* ---------- Forms ---------- */
+  label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:5px;}
+  label.radio-inline{
+    display:flex;align-items:center;gap:7px;
+    text-transform:none;font-weight:500;font-size:14.5px;color:var(--ink);
+  }
+  input[type=text],input[type=number],input[type=tel],select,textarea{
+    width:100%;
+    padding:11px 12px;
+    border:1.5px solid var(--border);
+    border-radius:8px;
+    background:var(--surface-2);
+    color:var(--ink);
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--brass);outline-offset:1px;border-color:var(--brass);}
+  .field{margin-bottom:14px;}
+  .grid{display:grid;gap:14px;}
+  .grid-2{grid-template-columns:1fr 1fr;}
+  .grid-3{grid-template-columns:1fr 1fr 1fr;}
+  .grid-4{grid-template-columns:1fr 1fr 1fr 1fr;}
+  @media (max-width:720px){
+    .grid-2,.grid-3,.grid-4{grid-template-columns:1fr 1fr;}
+  }
+  @media (max-width:500px){
+    .grid-2,.grid-3,.grid-4{grid-template-columns:1fr;}
+  }
+  .checkbox-row{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+  .checkbox-row input{width:18px;height:18px;}
+  .checkbox-row label{margin:0;text-transform:none;font-size:14.5px;font-weight:600;color:var(--ink);}
+
+  /* ---------- Table ---------- */
+  table{width:100%;border-collapse:collapse;font-size:14.5px;}
+  th{
+    text-align:left;
+    font-size:11.5px;
+    text-transform:uppercase;
+    letter-spacing:0.4px;
+    color:var(--ink-soft);
+    padding:10px 10px;
+    border-bottom:2px solid var(--border);
+  }
+  td{padding:12px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tr.low-stock td{background:var(--danger-bg);}
+  tr.low-stock td:first-child{border-left:3px solid var(--danger);}
+  tr.variant-row td{background:var(--surface-2);font-size:13.5px;color:var(--ink-soft);padding-left:26px;}
+  tr.variant-row.low td{background:var(--danger-bg);color:var(--ink);}
+  tr.variant-row td:first-child{border-left:3px solid transparent;}
+  tr.variant-row.low td:first-child{border-left:3px solid var(--danger);}
+  .pill{
+    display:inline-block;
+    padding:3px 10px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:700;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    color:var(--ink-soft);
+  }
+  .pill.low{background:var(--danger);color:#fff;border:none;}
+  .pill.ok{background:#E7EFEA;color:var(--teal-dark);border:none;}
+  .pill.due{background:var(--danger-bg);color:var(--danger);border:1px solid #EBC9BA;}
+  .row-actions{display:flex;gap:6px;flex-wrap:wrap;}
+  .empty-state{
+    text-align:center;
+    padding:40px 20px;
+    color:var(--ink-soft);
+  }
+  .empty-state h3{margin-bottom:6px;color:var(--walnut);}
+
+  /* ---------- Dashboard cards ---------- */
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
+  @media (max-width:720px){.stat-grid{grid-template-columns:1fr 1fr;}}
+  .stat-card{
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px 18px;
+  }
+  .stat-card .label{font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ink-soft);font-weight:700;}
+  .stat-card .value{font-family:'Fraunces',serif;font-size:28px;color:var(--walnut-dark);margin-top:6px;}
+  .stat-card.alert{background:var(--danger-bg);border-color:#EBC9BA;}
+  .stat-card.alert .value{color:var(--danger);}
+
+  .alert-banner{
+    background:var(--danger-bg);
+    border:1px solid #EBC9BA;
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:18px;
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .alert-banner strong{color:var(--danger);}
+  .alert-banner.brass{background:#F7EEE0;border-color:#E7D2AC;}
+  .alert-banner.brass strong{color:var(--brass);}
+
+  /* ---------- Billing ---------- */
+  .bill-line{
+    display:grid;
+    grid-template-columns:1.7fr 1fr 0.7fr 1fr 0.8fr 1fr 34px;
+    gap:8px;
+    align-items:end;
+    padding:10px 0;
+    border-bottom:1px dashed var(--border);
+  }
+  @media (max-width:900px){.bill-line{grid-template-columns:1fr 1fr;}}
+  .bill-line .line-total{padding-top:11px;font-weight:700;}
+  .totals-box{
+    margin-top:16px;
+    margin-left:auto;
+    max-width:340px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+  }
+  .totals-row{display:flex;justify-content:space-between;padding:5px 0;font-size:14.5px;}
+  .totals-row.grand{font-weight:800;font-size:18px;border-top:2px dashed var(--brass);margin-top:6px;padding-top:10px;color:var(--walnut-dark);}
+  .totals-row.discount span:last-child{color:var(--danger);}
+
+  .variant-row{
+    display:grid;
+    grid-template-columns:1.3fr 0.8fr 0.9fr 0.9fr 0.9fr 34px;
+    gap:8px;
+    align-items:end;
+    padding:8px 0;
+    border-bottom:1px dashed var(--border);
+  }
+  @media (max-width:720px){.variant-row{grid-template-columns:1fr 1fr;}}
+
+  /* ---------- Invoice print view ---------- */
+  #invoice-overlay{
+    display:none;
+    position:fixed;inset:0;
+    background:rgba(43,32,22,0.55);
+    z-index:100;
+    align-items:flex-start;
+    justify-content:center;
+    overflow-y:auto;
+    padding:24px 12px;
+  }
+  #invoice-overlay.open{display:flex;}
+  .invoice-sheet{
+    background:#fff;
+    width:100%;
+    max-width:680px;
+    padding:36px;
+    border-radius:6px;
+    color:#1a1a1a;
+    font-family:'Public Sans',sans-serif;
+  }
+  .invoice-sheet .inv-head{
+    display:flex;justify-content:space-between;align-items:flex-start;
+    border-bottom:3px double #333;
+    padding-bottom:14px;margin-bottom:14px;
+  }
+  .invoice-sheet .shop-name{font-family:'Fraunces',serif;font-size:24px;font-weight:700;}
+  .invoice-sheet .shop-meta{font-size:12.5px;color:#555;margin-top:4px;line-height:1.5;}
+  .invoice-sheet .inv-title{text-align:right;}
+  .invoice-sheet .inv-title .tag{font-size:20px;font-weight:800;letter-spacing:1px;color:#6B4A34;}
+  .invoice-sheet table{margin-top:14px;}
+  .invoice-sheet th{border-bottom:2px solid #333;color:#333;}
+  .invoice-sheet td{border-bottom:1px solid #ddd;}
+  .invoice-sheet .pay-box{margin-top:16px;padding:10px 14px;border:1.5px dashed #999;border-radius:6px;font-size:13.5px;}
+  .invoice-sheet .pay-box.due{border-color:var(--danger);color:var(--danger);font-weight:700;}
+  .invoice-actions{
+    display:flex;gap:10px;justify-content:flex-end;
+    padding:14px 36px 30px 36px;
+    max-width:680px;margin:0 auto;
+  }
+
+  @media print{
+    body *{visibility:hidden;}
+    #invoice-overlay, #invoice-overlay *, #barcode-print-overlay, #barcode-print-overlay *{visibility:visible;}
+    #invoice-overlay{position:absolute;inset:0;background:#fff;padding:0;}
+    #barcode-print-overlay{position:absolute;inset:0;background:#fff;padding:0;}
+    .invoice-actions{display:none;}
+    .invoice-sheet{box-shadow:none;max-width:100%;}
+    #barcode-print-overlay .modal-close{display:none;}
+    #barcode-print-overlay button.btn-primary{display:none;}
+  }
+
+  .search-input{max-width:320px;}
+  .toast{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+    background:var(--walnut-dark);color:#fff;padding:12px 20px;border-radius:8px;
+    font-size:14px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,0.25);
+    z-index:200;opacity:0;pointer-events:none;transition:opacity 0.25s;
+  }
+  .toast.show{opacity:1;}
+  .modal-close{background:none;border:none;font-size:20px;color:var(--ink-soft);}
+  .helper{font-size:12.5px;color:var(--ink-soft);margin-top:4px;}
+  .loading{padding:60px;text-align:center;color:var(--ink-soft);font-size:15px;}
+  a.tel-link{color:var(--teal-dark);font-weight:600;text-decoration:none;}
+  a.tel-link:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <h1 id="topShopName">Workshop Ledger</h1>
+    <div class="tagline">Stock &amp; Billing</div>
+  </div>
+  <div class="date" id="topDate"></div>
+</div>
+
+<div class="tabs" id="tabs">
+  <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn" data-tab="inventory">Inventory <span class="badge" id="lowStockBadge" style="display:none;">0</span></button>
+  <button class="tab-btn" data-tab="newbill">New Bill</button>
+  <button class="tab-btn" data-tab="bills">Bills</button>
+  <button class="tab-btn" data-tab="ledger">Ledger <span class="badge warn" id="ledgerBadge" style="display:none;">0</span></button>
+  <button class="tab-btn" data-tab="returns">Returns <span class="badge warn" id="returnsBadge" style="display:none;">0</span></button>
+  <button class="tab-btn" data-tab="settings">Settings</button>
+</div>
+
+<div id="app">
+  <div class="loading">Loading your shop data…</div>
+</div>
+
+<!-- Invoice overlay -->
+<div id="invoice-overlay">
+  <div>
+    <div class="invoice-sheet" id="invoiceSheet"></div>
+    <div class="invoice-actions">
+      <button class="btn btn-outline" onclick="closeInvoice()">Close</button>
+      <button class="btn btn-primary" onclick="window.print()">Print / Save PDF</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Barcode scanner overlay (used by Inventory and New Bill) -->
+<div id="scanner-overlay" style="display:none;position:fixed;inset:0;background:rgba(20,14,8,0.88);z-index:300;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:12px;padding:18px;max-width:440px;width:100%;">
+    <div class="panel-header" style="margin-bottom:10px;">
+      <h3 style="font-size:16px;">Scan Barcode</h3>
+      <button class="modal-close" onclick="closeScanner()">✕</button>
+    </div>
+    <video id="scannerVideo" style="width:100%;border-radius:8px;background:#000;max-height:320px;object-fit:cover;" playsinline autoplay muted></video>
+    <div class="helper" id="scannerStatus" style="margin-top:8px;">Starting camera…</div>
+    <div style="margin-top:12px;display:flex;gap:8px;">
+      <input type="text" id="scannerManualInput" placeholder="Or type the barcode number here" style="flex:1;" onkeydown="if(event.key==='Enter') submitManualScan();">
+      <button class="btn btn-outline btn-sm" onclick="submitManualScan()">Use</button>
+    </div>
+  </div>
+</div>
+
+<!-- Barcode print/view overlay -->
+<div id="barcode-print-overlay" style="display:none;position:fixed;inset:0;background:rgba(20,14,8,0.7);z-index:300;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:12px;padding:22px;max-width:360px;width:100%;text-align:center;">
+    <div class="panel-header" style="margin-bottom:6px;">
+      <h3 style="font-size:16px;">Product Barcode</h3>
+      <button class="modal-close" onclick="closeBarcodeModal()">✕</button>
+    </div>
+    <div class="helper" id="barcodePrintLabel" style="margin-bottom:10px;font-weight:600;color:var(--ink);"></div>
+    <svg id="barcodePrintSvg"></svg>
+    <div style="margin-top:14px;">
+      <button class="btn btn-primary btn-sm" onclick="window.print()">Print Label</button>
+    </div>
+  </div>
+</div>
+
+<!-- Optional CDN libraries: barcode generation + camera barcode scanning fallback.
+     The app works fully offline without these — if there's no internet when the page
+     loads, "Generate" barcodes and manual typing still work; camera scanning uses the
+     tablet/browser's own built-in scanner if these fail to load. -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5"></script>
+
+<script>
+/* ================= STATE ================= */
+let settings = null;
+let inventory = [];
+let bills = [];
+let returns = [];
+let currentBillLines = []; // {itemId, variantIdx, name, size, unit, qty, price, discountPct, available}
+let dataReady = false;
+
+const DEFAULT_SETTINGS = {
+  shopName: "Your Furnishing Shop",
+  address: "Shop address here",
+  phone: "03XX-XXXXXXX",
+  gstNumber: "",
+  gstRate: 0,
+  invoiceCounter: 1,
+  lowStockDefault: 5,
+  reminderIntervalDays: 2
+};
+
+const CATEGORY_SUGGESTIONS = ["Sofa Raw Material","Mattress","Pillows","Blankets","Cushions","Fabric","Foam","Other"];
+const UNIT_SUGGESTIONS = ["pcs","meter","kg","roll","set","yard","sheet"];
+
+/* ================= STORAGE HELPERS ================= */
+/* Data is saved directly in this browser, on this device, using localStorage.
+   It is NOT sent anywhere and does NOT depend on any account or internet connection.
+   It survives closing the tab, restarting the tablet, and losing internet access.
+   It can only be lost if someone clears this browser's site data on this device —
+   which is exactly why the Settings tab has a Backup / Restore feature. */
+const STORAGE_PREFIX = 'workshopLedger_';
+
+function loadKey(key, fallback){
+  try{
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    if(raw){ return JSON.parse(raw); }
+    return fallback;
+  }catch(e){
+    return fallback;
+  }
+}
+function saveKey(key, value){
+  try{
+    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    return true;
+  }catch(e){
+    showToast("⚠ Could not save to this device. Storage may be full or blocked.");
+    return false;
+  }
+}
+
+async function loadAll(){
+  settings = await loadKey('settings', DEFAULT_SETTINGS);
+  settings = {...DEFAULT_SETTINGS, ...settings};
+  inventory = await loadKey('inventory', []);
+  bills = await loadKey('bills', []);
+  returns = await loadKey('returns', []);
+  // migrate old bills without payment info -> treat as paid in full
+  bills.forEach(b=>{
+    if(!b.payment){
+      b.payment = {status:'paid', method:'cash', amountPaid:b.total, amountDue:0, payments:[{date:b.date, amount:b.total, method:'cash'}], lastReminded:null};
+    }
+  });
+  dataReady = true;
+}
+
+/* ================= UTIL ================= */
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function money(n){
+  n = Number(n)||0;
+  return "Rs " + n.toLocaleString('en-US', {maximumFractionDigits:2, minimumFractionDigits: n%1?2:0});
+}
+function round2(n){ return Math.round((Number(n)||0)*100)/100; }
+function todayStr(){
+  const d = new Date();
+  return d.toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'});
+}
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._h);
+  showToast._h = setTimeout(()=>t.classList.remove('show'), 2400);
+}
+function escapeHtml(s){
+  return String(s??"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function methodLabel(m){
+  return m==='card' ? 'Card' : (m==='bank'||m==='qr') ? 'Bank Transfer' : m==='cash' ? 'Cash' : '';
+}
+function daysSince(dateIso){
+  if(!dateIso) return 9999;
+  const ms = Date.now() - new Date(dateIso).getTime();
+  return Math.floor(ms/(1000*60*60*24));
+}
+
+/* -------- stock helpers (support sized items) -------- */
+function itemTotalQty(item){
+  if(item.hasSizes) return (item.variants||[]).reduce((s,v)=>s+Number(v.qty||0),0);
+  return Number(item.qty||0);
+}
+function variantIsLow(item, v){
+  const th = (v.lowStock ?? item.lowStock ?? settings.lowStockDefault ?? 5);
+  return Number(v.qty) <= Number(th);
+}
+function itemIsLow(item){
+  if(item.hasSizes) return (item.variants||[]).some(v=>variantIsLow(item,v));
+  const th = item.lowStock ?? settings.lowStockDefault ?? 5;
+  return Number(item.qty) <= Number(th);
+}
+/* -------- barcode helpers -------- */
+function allBarcodesInUse(){
+  const codes = [];
+  inventory.forEach(i=>{
+    if(i.hasSizes){ (i.variants||[]).forEach(v=>{ if(v.barcode) codes.push(v.barcode); }); }
+    else if(i.barcode) codes.push(i.barcode);
+  });
+  return codes;
+}
+function generateBarcodeValue(){
+  const used = allBarcodesInUse();
+  let code;
+  do{
+    code = '2' + String(Math.floor(Math.random()*100000000000)).padStart(11,'0');
+  } while(used.includes(code));
+  return code;
+}
+function findItemByBarcode(code){
+  code = (code||'').trim();
+  if(!code) return null;
+  for(const item of inventory){
+    if(item.hasSizes){
+      const vIdx = (item.variants||[]).findIndex(v=>v.barcode && v.barcode===code);
+      if(vIdx>-1) return {item, variantIdx:vIdx};
+    } else if(item.barcode && item.barcode===code){
+      return {item, variantIdx:null};
+    }
+  }
+  return null;
+}
+
+/* -------- camera barcode scanner engine -------- */
+let scannerStream = null;
+let scannerCallback = null;
+let scannerRAF = null;
+let scannerZXingReader = null;
+let scannerActive = false;
+
+function openBarcodeScanner(callback){
+  scannerCallback = callback;
+  const manual = document.getElementById('scannerManualInput');
+  if(manual) manual.value = '';
+  const status = document.getElementById('scannerStatus');
+  if(status) status.textContent = 'Starting camera…';
+  document.getElementById('scanner-overlay').style.display = 'flex';
+  scannerActive = true;
+  startScannerCamera();
+}
+function closeScanner(){
+  document.getElementById('scanner-overlay').style.display = 'none';
+  scannerActive = false;
+  stopScannerCamera();
+  scannerCallback = null;
+}
+async function startScannerCamera(){
+  const video = document.getElementById('scannerVideo');
+  const status = document.getElementById('scannerStatus');
+  const insecure = !window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia;
+  if(insecure){
+    video.style.display = 'none';
+    if(status){
+      status.innerHTML = location.protocol === 'file:'
+        ? 'The camera is blocked because this file is opened directly (file://) rather than through a web address — most phone/tablet browsers refuse camera access on file pages, even though desktop Chrome sometimes allows it. See <strong>Settings → Camera Scanning Setup</strong> for the two-minute fix. Meanwhile, type the barcode number below.'
+        : 'Camera access needs a secure (https) connection, which this page does not have. Type the barcode number below instead.';
+    }
+    return;
+  }
+  video.style.display = '';
+  try{
+    scannerStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
+    video.srcObject = scannerStream;
+    await video.play();
+    if(status) status.textContent = 'Point the camera at the barcode.';
+    if('BarcodeDetector' in window){
+      scanWithNativeDetector(video);
+    } else if(window.ZXingBrowser){
+      scanWithZXing(video);
+    } else {
+      if(status) status.textContent = 'Live scanning is not supported on this browser. Type the barcode number below instead.';
+    }
+  }catch(err){
+    if(status) status.textContent = 'Could not access the camera (permission denied, in use by another app, or unavailable). Type the barcode number below instead.';
+  }
+}
+function stopScannerCamera(){
+  if(scannerRAF){ cancelAnimationFrame(scannerRAF); scannerRAF = null; }
+  if(scannerStream){ scannerStream.getTracks().forEach(t=>t.stop()); scannerStream = null; }
+  if(scannerZXingReader){ try{ scannerZXingReader.reset(); }catch(e){} scannerZXingReader = null; }
+  const video = document.getElementById('scannerVideo');
+  if(video) video.srcObject = null;
+}
+async function scanWithNativeDetector(video){
+  let detector;
+  try{ detector = new BarcodeDetector({formats:['ean_13','ean_8','code_128','upc_a','upc_e','code_39','qr_code']}); }
+  catch(e){ try{ detector = new BarcodeDetector(); }catch(e2){ return; } }
+  const tick = async ()=>{
+    if(!scannerActive) return;
+    try{
+      const codes = await detector.detect(video);
+      if(codes && codes.length){ onScanSuccess(codes[0].rawValue); return; }
+    }catch(e){}
+    scannerRAF = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function scanWithZXing(video){
+  try{
+    const { BrowserMultiFormatReader } = window.ZXingBrowser;
+    scannerZXingReader = new BrowserMultiFormatReader();
+    scannerZXingReader.decodeFromVideoElement(video, (result)=>{
+      if(result && scannerActive){ onScanSuccess(result.getText()); }
+    });
+  }catch(e){
+    const status = document.getElementById('scannerStatus');
+    if(status) status.textContent = 'Live scanning failed to start. Type the barcode number below instead.';
+  }
+}
+function onScanSuccess(value){
+  if(!scannerActive) return;
+  if(navigator.vibrate){ try{ navigator.vibrate(80); }catch(e){} }
+  const cb = scannerCallback;
+  closeScanner();
+  if(cb) cb(value);
+}
+function submitManualScan(){
+  const val = document.getElementById('scannerManualInput').value.trim();
+  if(!val){ showToast('⚠ Type a barcode number first'); return; }
+  onScanSuccess(val);
+}
+
+function getLowStockEntries(){
+  const out = [];
+  inventory.forEach(item=>{
+    if(item.hasSizes){
+      (item.variants||[]).forEach(v=>{
+        if(variantIsLow(item,v)) out.push({label:`${item.name} (${v.size})`, qty:v.qty, unit:item.unit});
+      });
+    } else if(itemIsLow(item)){
+      out.push({label:item.name, qty:item.qty, unit:item.unit});
+    }
+  });
+  return out;
+}
+
+/* -------- ledger helpers -------- */
+function getDueBills(){
+  return bills.filter(b=> b.payment && b.payment.amountDue > 0.001);
+}
+function needsReminder(bill){
+  if(!bill.payment || bill.payment.amountDue<=0.001) return false;
+  const ref = bill.payment.lastReminded || bill.date;
+  return daysSince(ref) >= (settings.reminderIntervalDays || 2);
+}
+function getReminderList(){
+  return getDueBills().filter(needsReminder).sort((a,b)=> daysSince(b.date)-daysSince(a.date));
+}
+
+/* ================= TABS ================= */
+document.getElementById('tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.tab-btn');
+  if(!btn) return;
+  switchTab(btn.dataset.tab);
+});
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  render(tab);
+}
+
+/* ================= RENDER ROUTER ================= */
+function render(tab){
+  if(!tab){
+    tab = document.querySelector('.tab-btn.active')?.dataset.tab || 'dashboard';
+  }
+  const app = document.getElementById('app');
+  if(!dataReady){
+    app.innerHTML = '<div class="loading">Loading your shop data…</div>';
+    return;
+  }
+  document.getElementById('topShopName').textContent = settings.shopName || "Workshop Ledger";
+  document.getElementById('topDate').textContent = todayStr();
+  updateBadges();
+
+  if(tab==='dashboard') renderDashboard();
+  else if(tab==='inventory') renderInventory();
+  else if(tab==='newbill') renderNewBill();
+  else if(tab==='bills') renderBills();
+  else if(tab==='ledger') renderLedger();
+  else if(tab==='returns') renderReturns();
+  else if(tab==='settings') renderSettings();
+}
+
+function updateBadges(){
+  const lowCount = getLowStockEntries().length;
+  const lb = document.getElementById('lowStockBadge');
+  if(lowCount>0){ lb.style.display='inline-block'; lb.textContent = lowCount; }
+  else{ lb.style.display='none'; }
+
+  const remCount = getReminderList().length;
+  const rb = document.getElementById('ledgerBadge');
+  if(remCount>0){ rb.style.display='inline-block'; rb.textContent = remCount; }
+  else{ rb.style.display='none'; }
+
+  const openClaims = returns.filter(r=>r.status==='open').length;
+  const rtb = document.getElementById('returnsBadge');
+  if(openClaims>0){ rtb.style.display='inline-block'; rtb.textContent = openClaims; }
+  else{ rtb.style.display='none'; }
+}
+
+/* ================= DASHBOARD ================= */
+function renderDashboard(){
+  const app = document.getElementById('app');
+  const lowEntries = getLowStockEntries();
+  const todayKey = new Date().toDateString();
+  const todaysBills = bills.filter(b=> new Date(b.date).toDateString() === todayKey);
+  const todaysRevenue = todaysBills.reduce((s,b)=>s+b.total,0);
+  const dueBills = getDueBills();
+  const totalDue = dueBills.reduce((s,b)=>s+b.payment.amountDue,0);
+  const reminders = getReminderList();
+
+  app.innerHTML = `
+    <div class="panel">
+      <div class="panel-header"><h2>Today's Overview</h2></div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="label">Items in stock</div><div class="value">${inventory.length}</div></div>
+        <div class="stat-card ${lowEntries.length? 'alert':''}"><div class="label">Low stock alerts</div><div class="value">${lowEntries.length}</div></div>
+        <div class="stat-card"><div class="label">Bills today</div><div class="value">${todaysBills.length}</div></div>
+        <div class="stat-card ${totalDue>0?'alert':''}"><div class="label">Payments due</div><div class="value" style="font-size:22px;">${money(totalDue)}</div></div>
+      </div>
+
+      ${reminders.length ? `
+        <div class="alert-banner brass">
+          <div>
+            <strong>${reminders.length} customer${reminders.length>1?'s':''} due for a payment reminder.</strong>
+            <div style="margin-top:4px;">
+              ${reminders.slice(0,5).map(b=>`<span class="pill due" style="margin:2px 4px 2px 0;">${escapeHtml(b.customer.name)} — ${money(b.payment.amountDue)}</span>`).join('')}
+              ${reminders.length>5 ? `<span class="helper">+${reminders.length-5} more</span>` : ''}
+            </div>
+          </div>
+          <button class="btn btn-brass btn-sm" onclick="switchTab('ledger')">Open Ledger</button>
+        </div>
+      ` : ''}
+
+      ${lowEntries.length ? `
+        <div class="alert-banner">
+          <div>
+            <strong>${lowEntries.length} item${lowEntries.length>1?'s':''} running low.</strong>
+            <div style="margin-top:4px;">
+              ${lowEntries.slice(0,6).map(i=>`<span class="pill low" style="margin:2px 4px 2px 0;">${escapeHtml(i.label)} — ${i.qty} ${escapeHtml(i.unit)}</span>`).join('')}
+              ${lowEntries.length>6 ? `<span class="helper">+${lowEntries.length-6} more</span>` : ''}
+            </div>
+          </div>
+        </div>
+      ` : ''}
+
+      <hr class="stitch" style="margin:20px 0;">
+
+      <div class="panel-header"><h2 style="font-size:18px;">Quick actions</h2></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="switchTab('newbill')">+ New Bill</button>
+        <button class="btn btn-teal" onclick="switchTab('inventory')">+ Add Stock Item</button>
+        <button class="btn btn-outline" onclick="switchTab('bills')">View Bills</button>
+        <button class="btn btn-outline" onclick="switchTab('ledger')">View Ledger</button>
+        <button class="btn btn-outline" onclick="switchTab('returns')">Returns / Warranty</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ================= INVENTORY ================= */
+let editingItemId = null;
+let formVariants = []; // working copy while form is open
+
+function renderInventory(){
+  const app = document.getElementById('app');
+  const grouped = {};
+  inventory.forEach(i=>{
+    grouped[i.category] = grouped[i.category] || [];
+    grouped[i.category].push(i);
+  });
+
+  app.innerHTML = `
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Inventory</h2>
+        <button class="btn btn-primary btn-sm" onclick="openItemForm()">+ Add Item</button>
+      </div>
+      <div id="itemFormWrap"></div>
+      <hr class="stitch" style="margin:16px 0;">
+      <div id="inventoryList"></div>
+    </div>
+  `;
+
+  const listEl = document.getElementById('inventoryList');
+  if(inventory.length===0){
+    listEl.innerHTML = `<div class="empty-state"><h3>No stock yet</h3><p>Add your sofa raw material, mattress, pillows, blankets — anything you sell. Items like mattresses can have multiple sizes tracked separately.</p></div>`;
+  } else {
+    listEl.innerHTML = Object.keys(grouped).sort().map(cat=>`
+      <h3 style="font-size:15px;margin:18px 0 8px 0;color:var(--brass);text-transform:uppercase;letter-spacing:0.5px;">${escapeHtml(cat)}</h3>
+      <table>
+        <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Sell Price</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${grouped[cat].map(i=> i.hasSizes ? renderSizedItemRows(i) : renderSimpleItemRow(i)).join('')}
+        </tbody>
+      </table>
+    `).join('');
+  }
+}
+
+function renderSimpleItemRow(i){
+  const low = itemIsLow(i);
+  return `
+    <tr class="${low?'low-stock':''}">
+      <td><strong>${escapeHtml(i.name)}</strong></td>
+      <td>${i.qty}</td>
+      <td>${escapeHtml(i.unit)}</td>
+      <td>${money(i.costPrice)}</td>
+      <td>${money(i.sellPrice)}</td>
+      <td>${low ? '<span class="pill low">Low stock</span>' : '<span class="pill ok">OK</span>'}</td>
+      <td>
+        <div class="row-actions">
+          ${i.barcode?`<button class="btn btn-outline btn-sm" onclick="showBarcodeModal('${i.id}', null)">🏷 Barcode</button>`:''}
+          <button class="btn btn-outline btn-sm" onclick="openItemForm('${i.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteItem('${i.id}')">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+function renderSizedItemRows(i){
+  const totalQty = itemTotalQty(i);
+  const low = itemIsLow(i);
+  let html = `
+    <tr class="${low?'low-stock':''}">
+      <td><strong>${escapeHtml(i.name)}</strong><div class="helper">${(i.variants||[]).length} sizes</div></td>
+      <td>${totalQty}</td>
+      <td>${escapeHtml(i.unit)}</td>
+      <td>varies</td>
+      <td>varies</td>
+      <td>${low ? '<span class="pill low">Low stock</span>' : '<span class="pill ok">OK</span>'}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-outline btn-sm" onclick="openItemForm('${i.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteItem('${i.id}')">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `;
+  (i.variants||[]).forEach((v,idx)=>{
+    const vLow = variantIsLow(i,v);
+    html += `
+      <tr class="variant-row ${vLow?'low':''}">
+        <td>↳ ${escapeHtml(v.size)}</td>
+        <td>${v.qty}</td>
+        <td>${escapeHtml(i.unit)}</td>
+        <td>${money(v.costPrice)}</td>
+        <td>${money(v.sellPrice)}</td>
+        <td>${vLow ? '<span class="pill low">Low</span>' : '<span class="pill ok">OK</span>'}</td>
+        <td>${v.barcode?`<button class="btn btn-outline btn-sm" onclick="showBarcodeModal('${i.id}', ${idx})">🏷</button>`:''}</td>
+      </tr>
+    `;
+  });
+  return html;
+}
+
+function openItemForm(id){
+  editingItemId = id || null;
+  const item = id ? inventory.find(i=>i.id===id) : null;
+  formVariants = item && item.hasSizes ? JSON.parse(JSON.stringify(item.variants||[])) : [];
+  renderItemForm(item);
+}
+
+function renderItemForm(item){
+  const wrap = document.getElementById('itemFormWrap');
+  const hasSizes = item ? !!item.hasSizes : false;
+  wrap.innerHTML = `
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:6px;">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3 style="font-size:16px;">${item ? 'Edit item' : 'Add new item'}</h3>
+        <button class="modal-close" onclick="closeItemForm()">✕</button>
+      </div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label>Item name</label>
+          <input type="text" id="f_name" value="${item?escapeHtml(item.name):''}" placeholder="e.g. Molty 2-in-1 Mattress">
+        </div>
+        <div class="field">
+          <label>Category</label>
+          <input type="text" id="f_category" list="catList" value="${item?escapeHtml(item.category):''}" placeholder="e.g. Mattress">
+          <datalist id="catList">${CATEGORY_SUGGESTIONS.map(c=>`<option value="${c}">`).join('')}</datalist>
+        </div>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="f_hasSizes" ${hasSizes?'checked':''} onchange="toggleSizesMode()">
+        <label for="f_hasSizes">This item comes in multiple sizes (e.g. mattress sizes)</label>
+      </div>
+
+      <div class="field" style="max-width:220px;">
+        <label>Unit</label>
+        <input type="text" id="f_unit" list="unitList" value="${item?escapeHtml(item.unit):'pcs'}" placeholder="pcs / meter / kg">
+        <datalist id="unitList">${UNIT_SUGGESTIONS.map(u=>`<option value="${u}">`).join('')}</datalist>
+      </div>
+
+      <div id="simpleStockFields" style="${hasSizes?'display:none;':''}">
+        <div class="grid grid-3">
+          <div class="field">
+            <label>Quantity in stock</label>
+            <input type="number" id="f_qty" value="${item&&!hasSizes?item.qty:0}" min="0" step="0.01">
+          </div>
+          <div class="field">
+            <label>Cost price / unit</label>
+            <input type="number" id="f_cost" value="${item&&!hasSizes?item.costPrice:0}" min="0" step="0.01">
+          </div>
+          <div class="field">
+            <label>Sell price / unit</label>
+            <input type="number" id="f_sell" value="${item&&!hasSizes?item.sellPrice:0}" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="field" style="max-width:220px;">
+          <label>Low stock alert below</label>
+          <input type="number" id="f_low" value="${item&&!hasSizes?(item.lowStock??settings.lowStockDefault):settings.lowStockDefault}" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>Barcode (optional)</label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="f_barcode" value="${item&&!hasSizes?escapeHtml(item.barcode||''):''}" placeholder="Scan or type barcode, or generate one">
+            <button type="button" class="btn btn-outline btn-sm" onclick="scanIntoField('f_barcode')">📷 Scan</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="generateIntoField('f_barcode')">🔀 Generate</button>
+          </div>
+          <div class="helper">Already has a barcode printed on it? Tap Scan and point the camera at it. No barcode yet? Tap Generate and stick a printed label on the item — use the Barcode button in the inventory list to print it.</div>
+        </div>
+      </div>
+
+      <div id="sizedStockFields" style="${hasSizes?'':'display:none;'}">
+        <label style="margin-top:6px;">Sizes</label>
+        <div class="helper" style="margin-bottom:8px;">Each size can have its own barcode, since different sizes are usually different physical items.</div>
+        <div id="variantRows"></div>
+        <button type="button" class="btn btn-teal btn-sm" style="margin-top:8px;" onclick="addVariantRow()">+ Add size</button>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:18px;">
+        <button class="btn btn-primary" onclick="saveItemForm()">${item?'Save changes':'Add item'}</button>
+        <button class="btn btn-outline" onclick="closeItemForm()">Cancel</button>
+      </div>
+    </div>
+  `;
+  if(hasSizes) renderVariantRows();
+}
+
+function toggleSizesMode(){
+  const on = document.getElementById('f_hasSizes').checked;
+  document.getElementById('simpleStockFields').style.display = on ? 'none':'';
+  document.getElementById('sizedStockFields').style.display = on ? '':'none';
+  if(on && formVariants.length===0){ addVariantRow(); return; }
+}
+function addVariantRow(){
+  formVariants.push({size:'', qty:0, costPrice:0, sellPrice:0, lowStock: settings.lowStockDefault, barcode:''});
+  renderVariantRows();
+}
+function removeVariantRow(idx){
+  formVariants.splice(idx,1);
+  renderVariantRows();
+}
+function updateVariantField(idx, field, val){
+  if(field==='size' || field==='barcode'){ formVariants[idx][field] = val; }
+  else{ formVariants[idx][field] = parseFloat(val)||0; }
+}
+function scanIntoVariantField(idx){
+  openBarcodeScanner((val)=>{
+    formVariants[idx].barcode = val;
+    renderVariantRows();
+    showToast('✓ Barcode captured for this size');
+  });
+}
+function generateIntoVariantField(idx){
+  formVariants[idx].barcode = generateBarcodeValue();
+  renderVariantRows();
+}
+function renderVariantRows(){
+  const wrap = document.getElementById('variantRows');
+  if(!wrap) return;
+  wrap.innerHTML = `
+    <div class="variant-row" style="grid-template-columns:1fr 0.7fr 0.8fr 0.8fr 0.8fr 1.3fr 34px;border-bottom:2px solid var(--border);font-size:11px;text-transform:uppercase;color:var(--ink-soft);font-weight:700;">
+      <div>Size</div><div>Qty</div><div>Cost</div><div>Sell</div><div>Low at</div><div>Barcode</div><div></div>
+    </div>
+    ${formVariants.map((v,idx)=>`
+      <div class="variant-row" style="grid-template-columns:1fr 0.7fr 0.8fr 0.8fr 0.8fr 1.3fr 34px;">
+        <div><input type="text" value="${escapeHtml(v.size)}" placeholder="e.g. 78x72" oninput="updateVariantField(${idx},'size',this.value)"></div>
+        <div><input type="number" min="0" step="0.01" value="${v.qty}" oninput="updateVariantField(${idx},'qty',this.value)"></div>
+        <div><input type="number" min="0" step="0.01" value="${v.costPrice}" oninput="updateVariantField(${idx},'costPrice',this.value)"></div>
+        <div><input type="number" min="0" step="0.01" value="${v.sellPrice}" oninput="updateVariantField(${idx},'sellPrice',this.value)"></div>
+        <div><input type="number" min="0" step="0.01" value="${v.lowStock}" oninput="updateVariantField(${idx},'lowStock',this.value)"></div>
+        <div style="display:flex;gap:4px;">
+          <input type="text" value="${escapeHtml(v.barcode||'')}" placeholder="optional" style="min-width:0;" oninput="updateVariantField(${idx},'barcode',this.value)">
+          <button type="button" class="btn btn-outline btn-sm" style="padding:6px 8px;" title="Scan" onclick="scanIntoVariantField(${idx})">📷</button>
+          <button type="button" class="btn btn-outline btn-sm" style="padding:6px 8px;" title="Generate" onclick="generateIntoVariantField(${idx})">🔀</button>
+        </div>
+        <div style="padding-top:6px;"><button class="btn btn-danger btn-sm" onclick="removeVariantRow(${idx})">✕</button></div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function scanIntoField(fieldId){
+  openBarcodeScanner((val)=>{
+    const el = document.getElementById(fieldId);
+    if(el){ el.value = val; showToast('✓ Barcode captured'); }
+  });
+}
+function generateIntoField(fieldId){
+  const el = document.getElementById(fieldId);
+  if(el) el.value = generateBarcodeValue();
+}
+function showBarcodeModal(itemId, variantIdx){
+  const item = inventory.find(i=>i.id===itemId);
+  if(!item) return;
+  let code, label;
+  if(variantIdx!=null && item.hasSizes){
+    const v = item.variants[variantIdx];
+    code = v.barcode;
+    label = item.name + ' (' + v.size + ')';
+  } else {
+    code = item.barcode;
+    label = item.name;
+  }
+  if(!code){ showToast('⚠ This item has no barcode yet. Add one from Edit.'); return; }
+  const overlay = document.getElementById('barcode-print-overlay');
+  document.getElementById('barcodePrintLabel').textContent = label;
+  overlay.style.display = 'flex';
+  setTimeout(()=>{
+    try{
+      JsBarcode('#barcodePrintSvg', code, {format:'CODE128', width:2, height:70, displayValue:true, fontSize:16, margin:10});
+    }catch(e){
+      document.getElementById('barcodePrintSvg').outerHTML = '<div class="helper">Could not render barcode image (no internet to load barcode library). The code is: '+escapeHtml(code)+'</div>';
+    }
+  }, 30);
+}
+function closeBarcodeModal(){
+  document.getElementById('barcode-print-overlay').style.display='none';
+}
+function closeItemForm(){
+  editingItemId = null;
+  formVariants = [];
+  document.getElementById('itemFormWrap').innerHTML = '';
+}
+async function saveItemForm(){
+  const name = document.getElementById('f_name').value.trim();
+  const category = document.getElementById('f_category').value.trim() || 'Other';
+  const unit = document.getElementById('f_unit').value.trim() || 'pcs';
+  const hasSizes = document.getElementById('f_hasSizes').checked;
+
+  if(!name){ showToast('⚠ Item name is required'); return; }
+
+  let itemData;
+  if(hasSizes){
+    const cleanVariants = formVariants.filter(v=>v.size && v.size.trim()!=='');
+    if(cleanVariants.length===0){ showToast('⚠ Add at least one size'); return; }
+    itemData = {name, category, unit, hasSizes:true, variants:cleanVariants};
+  } else {
+    const qty = parseFloat(document.getElementById('f_qty').value) || 0;
+    const costPrice = parseFloat(document.getElementById('f_cost').value) || 0;
+    const sellPrice = parseFloat(document.getElementById('f_sell').value) || 0;
+    const lowStock = parseFloat(document.getElementById('f_low').value) || 0;
+    const barcode = document.getElementById('f_barcode').value.trim();
+    itemData = {name, category, unit, hasSizes:false, qty, costPrice, sellPrice, lowStock, barcode};
+  }
+
+  if(editingItemId){
+    const idx = inventory.findIndex(i=>i.id===editingItemId);
+    if(idx>-1){ inventory[idx] = {...inventory[idx], ...itemData}; }
+  } else {
+    inventory.push({id:uid(), ...itemData});
+  }
+  await saveKey('inventory', inventory);
+  closeItemForm();
+  showToast('✓ Item saved');
+  render('inventory');
+}
+async function deleteItem(id){
+  if(!confirm('Delete this item from inventory?')) return;
+  inventory = inventory.filter(i=>i.id!==id);
+  await saveKey('inventory', inventory);
+  showToast('Item deleted');
+  render('inventory');
+}
+
+/* ================= NEW BILL ================= */
+function renderNewBill(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="panel">
+      <div class="panel-header"><h2>New Bill</h2></div>
+
+      <div class="grid grid-2">
+        <div class="field"><label>Customer name</label><input type="text" id="b_name" placeholder="Customer name"></div>
+        <div class="field"><label>Phone</label><input type="tel" id="b_phone" placeholder="03XX-XXXXXXX"></div>
+      </div>
+      <div class="grid grid-2">
+        <div class="field"><label>Address (optional)</label><input type="text" id="b_address" placeholder="Customer address"></div>
+        <div class="field"><label>Customer GST / Tax No. (optional)</label><input type="text" id="b_cgst" placeholder="If applicable"></div>
+      </div>
+
+      <hr class="stitch" style="margin:18px 0;">
+      <div class="panel-header"><h3 style="font-size:16px;">Items</h3></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-start;">
+        <button class="btn btn-teal" onclick="scanToAddBillItem()">📷 Scan Barcode to Add</button>
+        <div style="flex:1;min-width:220px;position:relative;">
+          <input type="text" id="quickSearch" placeholder="Or search product by name / size / barcode…" autocomplete="off"
+            oninput="onQuickSearchInput(this.value)"
+            onblur="setTimeout(()=>{const b=document.getElementById('quickSearchResults'); if(b) b.style.display='none';},150)">
+          <div id="quickSearchResults" style="position:absolute;z-index:30;background:#fff;border:1px solid var(--border);border-radius:8px;width:100%;max-height:230px;overflow-y:auto;display:none;box-shadow:var(--shadow);"></div>
+        </div>
+        <button class="btn btn-outline" onclick="addBillLine()">+ Add blank line</button>
+      </div>
+      <div id="billLines"></div>
+
+      <div class="totals-box" id="totalsBox"></div>
+
+      <hr class="stitch" style="margin:20px 0;">
+      <div class="field" style="max-width:520px;">
+        <label>Payment</label>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;">
+          <label class="radio-inline"><input type="radio" name="paystatus" value="paid" checked onchange="onPayStatusChange(this.value)"> Paid in full</label>
+          <label class="radio-inline"><input type="radio" name="paystatus" value="partial" onchange="onPayStatusChange(this.value)"> Partial payment</label>
+          <label class="radio-inline"><input type="radio" name="paystatus" value="credit" onchange="onPayStatusChange(this.value)"> Credit (pay later)</label>
+        </div>
+      </div>
+      <div class="field" id="partialAmountWrap" style="display:none;max-width:220px;">
+        <label>Amount received now</label>
+        <input type="number" id="b_amountPaid" min="0" step="0.01" value="0">
+      </div>
+
+      <div class="field" id="payMethodWrap" style="max-width:520px;">
+        <label>Paid via</label>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;">
+          <label class="radio-inline"><input type="radio" name="paymethod" value="cash" checked> Cash</label>
+          <label class="radio-inline"><input type="radio" name="paymethod" value="card"> Card</label>
+          <label class="radio-inline"><input type="radio" name="paymethod" value="bank"> Bank Transfer</label>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;display:flex;gap:10px;">
+        <button class="btn btn-primary" onclick="generateBill()">Generate Bill</button>
+        <button class="btn btn-outline" onclick="resetBillForm()">Clear</button>
+      </div>
+    </div>
+  `;
+  if(currentBillLines.length===0) addBillLine();
+  else { renderBillLines(); renderTotals(); }
+}
+function onPayStatusChange(val){
+  document.getElementById('partialAmountWrap').style.display = val==='partial' ? '' : 'none';
+  document.getElementById('payMethodWrap').style.display = val==='credit' ? 'none' : '';
+}
+
+function addBillLine(){
+  currentBillLines.push({itemId:'', variantIdx:null, name:'', size:'', unit:'', qty:1, price:0, discountPct:0, available:0});
+  renderBillLines();
+  renderTotals();
+}
+function removeBillLine(idx){
+  currentBillLines.splice(idx,1);
+  renderBillLines();
+  renderTotals();
+}
+function scanToAddBillItem(){
+  openBarcodeScanner((code)=>{
+    const match = findItemByBarcode(code);
+    if(!match){ showToast('⚠ No product matches that barcode. Try search, or add it in Inventory first.'); return; }
+    addItemToBillByMatch(match.item, match.variantIdx);
+  });
+}
+function addItemToBillByMatch(item, variantIdx){
+  const existing = currentBillLines.find(l=> l.itemId===item.id && l.variantIdx===variantIdx);
+  if(existing){
+    existing.qty = round2((existing.qty||0) + 1);
+  } else {
+    let priceInfo;
+    if(variantIdx!=null){
+      const v = item.variants[variantIdx];
+      priceInfo = {price:v.sellPrice, available:v.qty, size:v.size};
+    } else {
+      priceInfo = {price:item.sellPrice, available:item.qty, size:''};
+    }
+    const newLine = {itemId:item.id, variantIdx: variantIdx!=null?variantIdx:null, name:item.name, size:priceInfo.size, unit:item.unit, qty:1, price:priceInfo.price, discountPct:0, available:priceInfo.available};
+    const blankIdx = currentBillLines.findIndex(l=>!l.itemId);
+    if(blankIdx>-1) currentBillLines[blankIdx] = newLine;
+    else currentBillLines.push(newLine);
+  }
+  renderBillLines();
+  renderTotals();
+  showToast('✓ Added ' + item.name + (variantIdx!=null ? ' (' + item.variants[variantIdx].size + ')' : ''));
+}
+function onQuickSearchInput(q){
+  const box = document.getElementById('quickSearchResults');
+  q = q.trim().toLowerCase();
+  if(!q){ box.style.display='none'; box.innerHTML=''; return; }
+  const results = [];
+  inventory.forEach(item=>{
+    if(item.hasSizes){
+      (item.variants||[]).forEach((v,idx)=>{
+        if(item.name.toLowerCase().includes(q) || (v.size&&v.size.toLowerCase().includes(q)) || (v.barcode&&v.barcode.includes(q))){
+          results.push({item, variantIdx:idx, label: item.name+' ('+v.size+') — '+v.qty+' '+item.unit+' left — '+money(v.sellPrice)});
+        }
+      });
+    } else if(item.name.toLowerCase().includes(q) || (item.barcode&&item.barcode.includes(q))){
+      results.push({item, variantIdx:null, label: item.name+' — '+item.qty+' '+item.unit+' left — '+money(item.sellPrice)});
+    }
+  });
+  window._quickSearchResults = results;
+  if(results.length===0){
+    box.innerHTML = '<div style="padding:10px 12px;color:var(--ink-soft);font-size:13.5px;">No matching products</div>';
+    box.style.display='block';
+    return;
+  }
+  box.innerHTML = results.slice(0,8).map((r,i)=>`<div style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;" onmousedown="pickQuickSearch(${i})">${escapeHtml(r.label)}</div>`).join('');
+  box.style.display='block';
+}
+function pickQuickSearch(i){
+  const r = window._quickSearchResults ? window._quickSearchResults[i] : null;
+  if(!r) return;
+  addItemToBillByMatch(r.item, r.variantIdx);
+  const input = document.getElementById('quickSearch');
+  if(input) input.value = '';
+  const box = document.getElementById('quickSearchResults');
+  if(box){ box.style.display='none'; box.innerHTML=''; }
+}
+function itemOptionsHtml(selectedId){
+  return `<option value="">Select item…</option>` + inventory.map(i=>
+    `<option value="${i.id}" ${i.id===selectedId?'selected':''}>${escapeHtml(i.name)}${i.hasSizes?' (sized)':` (${i.qty} ${escapeHtml(i.unit)} left)`}</option>`
+  ).join('');
+}
+function sizeOptionsHtml(item, selectedIdx){
+  return `<option value="">Select size…</option>` + (item.variants||[]).map((v,idx)=>
+    `<option value="${idx}" ${idx===selectedIdx?'selected':''}>${escapeHtml(v.size)} (${v.qty} left)</option>`
+  ).join('');
+}
+function lineTotal(line){
+  const raw = (line.qty||0)*(line.price||0);
+  const disc = raw*((line.discountPct||0)/100);
+  return round2(raw-disc);
+}
+function renderBillLines(){
+  const wrap = document.getElementById('billLines');
+  if(!wrap) return;
+  if(currentBillLines.length===0){
+    wrap.innerHTML = `<div class="helper">No items added yet.</div>`;
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="bill-line" style="border-bottom:2px solid var(--border);font-size:11px;text-transform:uppercase;color:var(--ink-soft);font-weight:700;">
+      <div>Item</div><div>Size</div><div>Qty</div><div>Price/unit</div><div>Disc %</div><div>Line total</div><div></div>
+    </div>
+    ${currentBillLines.map((line, idx)=>{
+      const item = inventory.find(i=>i.id===line.itemId);
+      const overStock = line.itemId && line.qty > line.available;
+      return `
+      <div class="bill-line">
+        <div>
+          <select onchange="onLineItemChange(${idx}, this.value)">
+            ${itemOptionsHtml(line.itemId)}
+          </select>
+        </div>
+        <div>
+          ${item && item.hasSizes ? `<select onchange="onLineSizeChange(${idx}, this.value)">${sizeOptionsHtml(item, line.variantIdx)}</select>` : `<div class="helper" style="padding-top:11px;">—</div>`}
+        </div>
+        <div><input type="number" min="0" step="0.01" value="${line.qty}" onchange="onLineQtyChange(${idx}, this.value)"></div>
+        <div><input type="number" min="0" step="0.01" value="${line.price}" onchange="onLinePriceChange(${idx}, this.value)"></div>
+        <div><input type="number" min="0" max="100" step="0.5" value="${line.discountPct}" onchange="onLineDiscountChange(${idx}, this.value)"></div>
+        <div class="line-total">${money(lineTotal(line))}</div>
+        <div style="padding-top:6px;"><button class="btn btn-danger btn-sm" onclick="removeBillLine(${idx})">✕</button></div>
+      </div>
+      ${overStock ? `<div class="helper" style="color:var(--danger);margin:-4px 0 6px 0;">Only ${line.available} ${escapeHtml(line.unit)} in stock for this ${item&&item.hasSizes?'size':'item'}</div>` : ''}
+      `;
+    }).join('')}
+  `;
+}
+function onLineItemChange(idx, itemId){
+  const item = inventory.find(i=>i.id===itemId);
+  if(item && item.hasSizes){
+    currentBillLines[idx] = {...currentBillLines[idx], itemId, variantIdx:null, name:item.name, size:'', unit:item.unit, price:0, available:0};
+  } else if(item){
+    currentBillLines[idx] = {...currentBillLines[idx], itemId, variantIdx:null, name:item.name, size:'', unit:item.unit, price:item.sellPrice, available:item.qty};
+  } else {
+    currentBillLines[idx] = {itemId:'', variantIdx:null, name:'', size:'', unit:'', qty:currentBillLines[idx].qty, price:0, discountPct:currentBillLines[idx].discountPct, available:0};
+  }
+  renderBillLines();
+  renderTotals();
+}
+function onLineSizeChange(idx, variantIdxStr){
+  const line = currentBillLines[idx];
+  const item = inventory.find(i=>i.id===line.itemId);
+  if(!item) return;
+  if(variantIdxStr===''){
+    currentBillLines[idx] = {...line, variantIdx:null, size:'', price:0, available:0};
+  } else {
+    const variantIdx = parseInt(variantIdxStr,10);
+    const v = item.variants[variantIdx];
+    currentBillLines[idx] = {...line, variantIdx, size:v.size, price:v.sellPrice, available:v.qty};
+  }
+  renderBillLines();
+  renderTotals();
+}
+function onLineQtyChange(idx, val){
+  currentBillLines[idx].qty = parseFloat(val)||0;
+  renderBillLines();
+  renderTotals();
+}
+function onLinePriceChange(idx, val){
+  currentBillLines[idx].price = parseFloat(val)||0;
+  renderBillLines();
+  renderTotals();
+}
+function onLineDiscountChange(idx, val){
+  let d = parseFloat(val)||0;
+  if(d<0) d=0; if(d>100) d=100;
+  currentBillLines[idx].discountPct = d;
+  renderBillLines();
+  renderTotals();
+}
+function computeBillTotals(){
+  const grossSubtotal = currentBillLines.reduce((s,l)=>s+(l.qty||0)*(l.price||0),0);
+  const discountTotal = currentBillLines.reduce((s,l)=>s+((l.qty||0)*(l.price||0))*((l.discountPct||0)/100),0);
+  const netSubtotal = grossSubtotal - discountTotal;
+  const gstRate = settings.gstRate || 0;
+  const gstAmount = netSubtotal*(gstRate/100);
+  const total = netSubtotal+gstAmount;
+  return {grossSubtotal:round2(grossSubtotal), discountTotal:round2(discountTotal), subtotal:round2(netSubtotal), gstRate, gstAmount:round2(gstAmount), total:round2(total)};
+}
+function renderTotals(){
+  const box = document.getElementById('totalsBox');
+  if(!box) return;
+  const t = computeBillTotals();
+  box.innerHTML = `
+    <div class="totals-row"><span>Item subtotal</span><span>${money(t.grossSubtotal)}</span></div>
+    ${t.discountTotal>0 ? `<div class="totals-row discount"><span>Discount</span><span>-${money(t.discountTotal)}</span></div>` : ''}
+    <div class="totals-row">
+      <span>Tax / GST
+        <input type="number" id="gstRateInline" value="${t.gstRate}" min="0" step="0.1" style="width:55px;display:inline-block;padding:3px 5px;margin-left:4px;" onchange="onGstRateChange(this.value)">%
+      </span>
+      <span>${money(t.gstAmount)}</span>
+    </div>
+    <div class="totals-row grand"><span>Total</span><span>${money(t.total)}</span></div>
+  `;
+}
+function onGstRateChange(val){
+  settings.gstRate = parseFloat(val)||0;
+  renderTotals();
+}
+function resetBillForm(){
+  currentBillLines = [];
+  renderNewBill();
+}
+
+async function generateBill(){
+  const name = document.getElementById('b_name').value.trim();
+  const phone = document.getElementById('b_phone').value.trim();
+  const address = document.getElementById('b_address').value.trim();
+  const cgst = document.getElementById('b_cgst').value.trim();
+  const payStatus = document.querySelector('input[name=paystatus]:checked').value;
+
+  const lines = currentBillLines.filter(l=>l.itemId && l.qty>0 && (!isSizedSelection(l) || l.variantIdx!==null));
+  if(lines.length===0){ showToast('⚠ Add at least one item (select size if needed)'); return; }
+  if(!name){ showToast('⚠ Customer name is required'); return; }
+
+  const overStock = lines.filter(l=>l.qty > l.available);
+  if(overStock.length){
+    const proceed = confirm(`Warning: ${overStock.map(l=>l.name+(l.size?' ('+l.size+')':'')).join(', ')} exceed${overStock.length===1?'s':''} available stock. Stock will go negative. Continue anyway?`);
+    if(!proceed) return;
+  }
+
+  const t = computeBillTotals();
+  const invoiceNo = settings.invoiceCounter || 1;
+
+  let amountPaid = 0;
+  if(payStatus==='paid') amountPaid = t.total;
+  else if(payStatus==='partial') amountPaid = Math.min(parseFloat(document.getElementById('b_amountPaid').value)||0, t.total);
+  else amountPaid = 0;
+  const amountDue = round2(t.total - amountPaid);
+  const payMethodEl = document.querySelector('input[name=paymethod]:checked');
+  const payMethod = amountPaid>0 ? (payMethodEl ? payMethodEl.value : 'cash') : null;
+
+  const bill = {
+    id: uid(),
+    invoiceNo,
+    date: new Date().toISOString(),
+    customer: {name, phone, address, gst: cgst},
+    items: lines.map(l=>({itemId:l.itemId, name:l.name, size:l.size||'', unit:l.unit, qty:l.qty, price:l.price, discountPct:l.discountPct||0, total:lineTotal(l)})),
+    grossSubtotal:t.grossSubtotal, discountTotal:t.discountTotal, subtotal:t.subtotal, gstRate:t.gstRate, gstAmount:t.gstAmount, total:t.total,
+    payment: {
+      status: payStatus,
+      method: payMethod,
+      amountPaid: round2(amountPaid),
+      amountDue,
+      payments: amountPaid>0 ? [{date:new Date().toISOString(), amount:round2(amountPaid), method:payMethod}] : [],
+      lastReminded: null
+    }
+  };
+
+  // deduct stock
+  lines.forEach(l=>{
+    const item = inventory.find(i=>i.id===l.itemId);
+    if(!item) return;
+    if(item.hasSizes && l.variantIdx!==null){
+      const v = item.variants[l.variantIdx];
+      if(v) v.qty = round2(Number(v.qty) - Number(l.qty));
+    } else {
+      item.qty = round2(Number(item.qty) - Number(l.qty));
+    }
+  });
+
+  bills.push(bill);
+  settings.invoiceCounter = invoiceNo + 1;
+
+  await saveKey('inventory', inventory);
+  await saveKey('bills', bills);
+  await saveKey('settings', settings);
+
+  currentBillLines = [];
+  showToast('✓ Bill generated and stock updated');
+  showInvoice(bill);
+  render('inventory');
+}
+function isSizedSelection(line){
+  const item = inventory.find(i=>i.id===line.itemId);
+  return item && item.hasSizes;
+}
+
+/* ================= BILLS LIST ================= */
+function renderBills(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Bills</h2>
+        <input type="text" class="search-input" id="billSearch" placeholder="Search by customer or invoice #" oninput="filterBills(this.value)">
+      </div>
+      <div id="billsList"></div>
+    </div>
+  `;
+  renderBillsList(bills);
+}
+function filterBills(q){
+  q = q.trim().toLowerCase();
+  const filtered = !q ? bills : bills.filter(b=>
+    (b.customer.name||'').toLowerCase().includes(q) ||
+    String(b.invoiceNo).includes(q) ||
+    (b.customer.phone||'').includes(q)
+  );
+  renderBillsList(filtered);
+}
+function renderBillsList(list){
+  const el = document.getElementById('billsList');
+  if(list.length===0){
+    el.innerHTML = `<div class="empty-state"><h3>No bills yet</h3><p>Generate your first bill from the New Bill tab.</p></div>`;
+    return;
+  }
+  const sorted = [...list].sort((a,b)=> new Date(b.date)-new Date(a.date));
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Invoice #</th><th>Date</th><th>Customer</th><th>Items</th><th>Total</th><th>Paid via</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${sorted.map(b=>`
+          <tr>
+            <td>#${b.invoiceNo}</td>
+            <td>${new Date(b.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</td>
+            <td>${escapeHtml(b.customer.name)}</td>
+            <td>${b.items.length}</td>
+            <td><strong>${money(b.total)}</strong></td>
+            <td>${b.payment.method ? methodLabel(b.payment.method) : '—'}</td>
+            <td>${b.payment.amountDue>0.001 ? `<span class="pill due">Due ${money(b.payment.amountDue)}</span>` : `<span class="pill ok">Paid</span>`}</td>
+            <td>
+              <div class="row-actions">
+                <button class="btn btn-outline btn-sm" onclick='showInvoice(${JSON.stringify(b).replace(/'/g,"&#39;")})'>View</button>
+                <button class="btn btn-outline btn-sm" onclick="startReturnForBill('${b.id}')">Return/Exchange</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ================= LEDGER (credit customers) ================= */
+function renderLedger(){
+  const app = document.getElementById('app');
+  const dueBills = getDueBills().sort((a,b)=> new Date(a.date)-new Date(b.date));
+  const reminders = getReminderList();
+
+  app.innerHTML = `
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Ledger — Pending Payments</h2>
+      </div>
+      ${reminders.length ? `
+        <div class="alert-banner brass">
+          <div>
+            <strong>${reminders.length} customer${reminders.length>1?'s':''} due for a reminder today.</strong>
+            <div class="helper">No reminder logged in the last ${settings.reminderIntervalDays||2} days.</div>
+          </div>
+        </div>
+      ` : `<div class="helper" style="margin-bottom:14px;">No reminders due right now. Reminders resurface every ${settings.reminderIntervalDays||2} days per unpaid bill.</div>`}
+      <div id="paymentFormWrap"></div>
+      <div id="ledgerList"></div>
+    </div>
+  `;
+
+  const el = document.getElementById('ledgerList');
+  if(dueBills.length===0){
+    el.innerHTML = `<div class="empty-state"><h3>No pending payments</h3><p>Credit and partially-paid bills will show up here for follow-up.</p></div>`;
+    return;
+  }
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Customer</th><th>Invoice</th><th>Bill date</th><th>Total</th><th>Paid</th><th>Due</th><th>Days pending</th><th>Last reminded</th><th></th></tr></thead>
+      <tbody>
+        ${dueBills.map(b=>{
+          const due = needsReminder(b);
+          return `
+          <tr class="${due?'low-stock':''}">
+            <td>
+              <strong>${escapeHtml(b.customer.name)}</strong>
+              ${b.customer.phone ? `<div class="helper"><a class="tel-link" href="tel:${escapeHtml(b.customer.phone)}">${escapeHtml(b.customer.phone)}</a></div>` : ''}
+            </td>
+            <td>#${b.invoiceNo}</td>
+            <td>${new Date(b.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</td>
+            <td>${money(b.total)}</td>
+            <td>${money(b.payment.amountPaid)}</td>
+            <td><span class="pill due">${money(b.payment.amountDue)}</span></td>
+            <td>${daysSince(b.date)} day${daysSince(b.date)===1?'':'s'}</td>
+            <td>${b.payment.lastReminded ? (daysSince(b.payment.lastReminded)+' day(s) ago') : 'Never'}</td>
+            <td>
+              <div class="row-actions">
+                <button class="btn btn-teal btn-sm" onclick="openPaymentForm('${b.id}')">Record Payment</button>
+                <button class="btn btn-outline btn-sm" onclick="markReminded('${b.id}')">${due?'Mark Reminded':'Remind Again'}</button>
+              </div>
+            </td>
+          </tr>
+        `;}).join('')}
+      </tbody>
+    </table>
+  `;
+}
+function openPaymentForm(billId){
+  const bill = bills.find(b=>b.id===billId);
+  if(!bill) return;
+  const wrap = document.getElementById('paymentFormWrap');
+  wrap.innerHTML = `
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;">
+      <div class="panel-header" style="margin-bottom:10px;">
+        <h3 style="font-size:15px;">Record payment — ${escapeHtml(bill.customer.name)} (Invoice #${bill.invoiceNo})</h3>
+        <button class="modal-close" onclick="closePaymentForm()">✕</button>
+      </div>
+      <div class="helper" style="margin-bottom:10px;">Currently due: <strong>${money(bill.payment.amountDue)}</strong></div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label>Amount received</label>
+          <input type="number" id="pay_amount" min="0" step="0.01" value="${bill.payment.amountDue}">
+        </div>
+        <div class="field">
+          <label>Paid via</label>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:6px;">
+            <label class="radio-inline"><input type="radio" name="paymethod2" value="cash" checked> Cash</label>
+            <label class="radio-inline"><input type="radio" name="paymethod2" value="card"> Card</label>
+            <label class="radio-inline"><input type="radio" name="paymethod2" value="bank"> Bank Transfer</label>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="submitPayment('${billId}')">Save Payment</button>
+    </div>
+  `;
+}
+function closePaymentForm(){
+  document.getElementById('paymentFormWrap').innerHTML = '';
+}
+async function submitPayment(billId){
+  const amt = parseFloat(document.getElementById('pay_amount').value)||0;
+  if(amt<=0){ showToast('⚠ Enter a valid amount'); return; }
+  const methodEl = document.querySelector('input[name=paymethod2]:checked');
+  const method = methodEl ? methodEl.value : 'cash';
+  const bill = bills.find(b=>b.id===billId);
+  if(!bill) return;
+  const applied = Math.min(amt, bill.payment.amountDue);
+  bill.payment.amountPaid = round2(bill.payment.amountPaid + applied);
+  bill.payment.amountDue = round2(bill.payment.amountDue - applied);
+  bill.payment.payments.push({date:new Date().toISOString(), amount:applied, method});
+  bill.payment.method = method;
+  if(bill.payment.amountDue<=0.001){ bill.payment.status='paid'; bill.payment.amountDue=0; }
+  await saveKey('bills', bills);
+  showToast('✓ Payment recorded');
+  closePaymentForm();
+  render('ledger');
+}
+async function markReminded(billId){
+  const bill = bills.find(b=>b.id===billId);
+  if(!bill) return;
+  bill.payment.lastReminded = new Date().toISOString();
+  await saveKey('bills', bills);
+  showToast('✓ Reminder logged for today');
+  render('ledger');
+}
+
+/* ================= INVOICE VIEW / PRINT ================= */
+function showInvoice(bill){
+  const sheet = document.getElementById('invoiceSheet');
+  const hasDiscount = bill.items.some(i=>i.discountPct>0);
+  sheet.innerHTML = `
+    <div class="inv-head">
+      <div>
+        <div class="shop-name">${escapeHtml(settings.shopName)}</div>
+        <div class="shop-meta">
+          ${escapeHtml(settings.address||'')}<br>
+          ${settings.phone?('Ph: '+escapeHtml(settings.phone)+'<br>'):''}
+          ${settings.gstNumber?('GST/Tax No: '+escapeHtml(settings.gstNumber)):''}
+        </div>
+      </div>
+      <div class="inv-title">
+        <div class="tag">INVOICE</div>
+        <div class="shop-meta">
+          #${bill.invoiceNo}<br>
+          ${new Date(bill.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
+        </div>
+      </div>
+    </div>
+    <div style="font-size:13.5px;margin-bottom:6px;">
+      <strong>Bill to:</strong> ${escapeHtml(bill.customer.name)}
+      ${bill.customer.phone?(' &nbsp;·&nbsp; '+escapeHtml(bill.customer.phone)):''}
+      ${bill.customer.address?('<br>'+escapeHtml(bill.customer.address)):''}
+      ${bill.customer.gst?('<br>GST/Tax No: '+escapeHtml(bill.customer.gst)):''}
+    </div>
+    <table>
+      <thead><tr><th>Item</th><th>Qty</th><th>Price</th>${hasDiscount?'<th>Disc %</th>':''}<th style="text-align:right;">Amount</th></tr></thead>
+      <tbody>
+        ${bill.items.map(i=>`
+          <tr>
+            <td>${escapeHtml(i.name)}${i.size?` <span style="color:#888;">(${escapeHtml(i.size)})</span>`:''}</td>
+            <td>${i.qty} ${escapeHtml(i.unit)}</td>
+            <td>${money(i.price)}</td>
+            ${hasDiscount?`<td>${i.discountPct>0?i.discountPct+'%':'—'}</td>`:''}
+            <td style="text-align:right;">${money(i.total)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="max-width:280px;margin-left:auto;margin-top:14px;font-size:14px;">
+      <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Item subtotal</span><span>${money(bill.grossSubtotal)}</span></div>
+      ${bill.discountTotal>0?`<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Discount</span><span>-${money(bill.discountTotal)}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Tax (${bill.gstRate}%)</span><span>${money(bill.gstAmount)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid #333;font-weight:800;font-size:16px;"><span>Total</span><span>${money(bill.total)}</span></div>
+    </div>
+    <div class="pay-box ${bill.payment.amountDue>0.001?'due':''}">
+      ${bill.payment.amountDue>0.001
+        ? `Paid: ${money(bill.payment.amountPaid)}${bill.payment.method?' via '+methodLabel(bill.payment.method):''} &nbsp;·&nbsp; Amount Due: ${money(bill.payment.amountDue)} &nbsp;·&nbsp; Status: ${bill.payment.status==='credit'?'Credit / Pay later':'Partially paid'}`
+        : `Paid in full — ${money(bill.payment.amountPaid)}${bill.payment.method?' via '+methodLabel(bill.payment.method):''}`}
+    </div>
+    <div style="margin-top:18px;font-size:12px;color:#777;text-align:center;">Thank you for your business.</div>
+  `;
+  document.getElementById('invoice-overlay').classList.add('open');
+}
+function closeInvoice(){
+  document.getElementById('invoice-overlay').classList.remove('open');
+}
+
+/* ================= RETURNS / EXCHANGE / WARRANTY ================= */
+let rf_selectedBill = null;
+let rf_selectedLine = null;
+let rf_exchangeItem = null; // {item, variantIdx}
+
+function renderReturns(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Returns, Exchanges &amp; Warranty Claims</h2>
+        <button class="btn btn-primary btn-sm" onclick="openReturnForm()">+ New Claim</button>
+      </div>
+      <p class="helper" style="margin-bottom:14px;">Log a return, exchange, or warranty complaint against a past bill. Returns and exchanges adjust your stock automatically. Warranty claims just stay on this list, marked Open, until you mark them Resolved.</p>
+      <div id="returnFormWrap"></div>
+      <div id="returnsList"></div>
+    </div>
+  `;
+  renderReturnsList();
+}
+
+function startReturnForBill(billId){
+  switchTab('returns');
+  openReturnForm();
+  rfPickBill(billId);
+}
+
+function openReturnForm(){
+  rf_selectedBill = null;
+  rf_selectedLine = null;
+  rf_exchangeItem = null;
+  const wrap = document.getElementById('returnFormWrap');
+  if(!wrap) return;
+  wrap.innerHTML = `
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:18px;">
+      <div class="panel-header" style="margin-bottom:12px;">
+        <h3 style="font-size:16px;">New Return / Exchange / Warranty Claim</h3>
+        <button class="modal-close" onclick="closeReturnForm()">✕</button>
+      </div>
+      <div class="field" style="position:relative;">
+        <label>Find the original bill</label>
+        <input type="text" id="rf_billSearch" placeholder="Search by invoice # or customer name" oninput="rfSearchBills(this.value)" autocomplete="off">
+        <div id="rfBillResults" style="border:1px solid var(--border);border-radius:8px;max-height:180px;overflow-y:auto;margin-top:6px;display:none;background:#fff;position:absolute;z-index:20;width:100%;"></div>
+      </div>
+      <div id="rfBillPicked"></div>
+    </div>
+  `;
+}
+function closeReturnForm(){
+  const wrap = document.getElementById('returnFormWrap');
+  if(wrap) wrap.innerHTML = '';
+}
+function rfSearchBills(q){
+  const box = document.getElementById('rfBillResults');
+  q = q.trim().toLowerCase();
+  if(!q){ box.style.display='none'; return; }
+  const matches = bills.filter(b=> String(b.invoiceNo).includes(q) || (b.customer.name||'').toLowerCase().includes(q))
+    .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
+  if(matches.length===0){
+    box.innerHTML = '<div style="padding:8px 12px;color:var(--ink-soft);font-size:13.5px;">No bills found</div>';
+    box.style.display='block';
+    return;
+  }
+  box.innerHTML = matches.map(b=>`<div style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;" onmousedown="rfPickBill('${b.id}')">#${b.invoiceNo} — ${escapeHtml(b.customer.name)} — ${money(b.total)}</div>`).join('');
+  box.style.display='block';
+}
+function rfPickBill(billId){
+  rf_selectedBill = bills.find(b=>b.id===billId) || null;
+  const results = document.getElementById('rfBillResults');
+  if(results) results.style.display='none';
+  const search = document.getElementById('rf_billSearch');
+  if(search) search.value = rf_selectedBill ? ('#'+rf_selectedBill.invoiceNo+' — '+rf_selectedBill.customer.name) : '';
+  renderRfBillPicked();
+}
+function renderRfBillPicked(){
+  const wrap = document.getElementById('rfBillPicked');
+  if(!wrap) return;
+  if(!rf_selectedBill){ wrap.innerHTML=''; return; }
+  const b = rf_selectedBill;
+  wrap.innerHTML = `
+    <hr class="stitch" style="margin:14px 0;">
+    <div class="field">
+      <label>Which item?</label>
+      <select id="rf_lineSelect" onchange="rfPickLine(this.value)">
+        <option value="">Select item from this bill…</option>
+        ${b.items.map((it,idx)=>`<option value="${idx}">${escapeHtml(it.name)}${it.size?' ('+escapeHtml(it.size)+')':''} — qty ${it.qty}</option>`).join('')}
+      </select>
+    </div>
+    <div id="rfLineDetail"></div>
+  `;
+}
+function rfPickLine(idxStr){
+  const idx = parseInt(idxStr,10);
+  rf_selectedLine = isNaN(idx) ? null : rf_selectedBill.items[idx];
+  renderRfLineDetail();
+}
+function renderRfLineDetail(){
+  const wrap = document.getElementById('rfLineDetail');
+  if(!wrap) return;
+  if(!rf_selectedLine){ wrap.innerHTML=''; return; }
+  const li = rf_selectedLine;
+  wrap.innerHTML = `
+    <div class="field">
+      <label>Claim type</label>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <label class="radio-inline"><input type="radio" name="rf_type" value="return" checked onchange="rfTypeChange(this.value)"> Return (refund)</label>
+        <label class="radio-inline"><input type="radio" name="rf_type" value="exchange" onchange="rfTypeChange(this.value)"> Exchange</label>
+        <label class="radio-inline"><input type="radio" name="rf_type" value="warranty" onchange="rfTypeChange(this.value)"> Warranty claim</label>
+      </div>
+    </div>
+    <div class="grid grid-2">
+      <div class="field"><label>Quantity</label><input type="number" id="rf_qty" min="0.01" max="${li.qty}" step="0.01" value="${li.qty}"></div>
+      <div class="field" id="rf_restockWrap">
+        <label>Stock</label>
+        <label class="radio-inline" style="padding-top:6px;"><input type="checkbox" id="rf_restock" checked> Add this item back to stock</label>
+      </div>
+    </div>
+    <div class="field"><label>Reason</label><input type="text" id="rf_reason" placeholder="e.g. wrong size, defective, customer changed mind"></div>
+    <div id="rf_exchangeWrap" style="display:none;">
+      <label>New item for exchange</label>
+      <div style="display:flex;gap:8px;margin-bottom:8px;position:relative;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="scanForExchange()">📷 Scan</button>
+        <input type="text" id="rf_exchangeSearch" placeholder="Search replacement product…" autocomplete="off" style="flex:1;" oninput="rfExchangeSearch(this.value)">
+      </div>
+      <div id="rfExchangeResults" style="border:1px solid var(--border);border-radius:8px;max-height:160px;overflow-y:auto;display:none;background:#fff;margin-bottom:8px;"></div>
+      <div id="rfExchangePicked" class="helper"></div>
+    </div>
+    <div class="field"><label>Notes (optional)</label><input type="text" id="rf_notes" placeholder="Any extra detail for your records"></div>
+    <div class="helper" id="rf_moneyNote" style="margin-bottom:10px;"></div>
+    <button class="btn btn-primary" onclick="submitReturn()">Save Claim</button>
+  `;
+  rfTypeChange('return');
+}
+function rfTypeChange(val){
+  const exWrap = document.getElementById('rf_exchangeWrap');
+  if(exWrap) exWrap.style.display = val==='exchange' ? '' : 'none';
+  const restockWrap = document.getElementById('rf_restockWrap');
+  if(restockWrap) restockWrap.style.display = val==='warranty' ? 'none' : '';
+  const note = document.getElementById('rf_moneyNote');
+  if(!note) return;
+  if(val==='return'){
+    note.textContent = 'This restocks the item (if checked) and notes down the refund amount for your records. It does not change the original invoice — refund the customer separately (cash/bank).';
+  } else if(val==='exchange'){
+    note.textContent = 'This restocks the returned item (if checked) and deducts stock for the new item, like a mini sale. Any price difference is shown so you know whether to collect more from the customer or refund some.';
+  } else {
+    note.textContent = 'This just keeps a record of the complaint. No stock or money changes happen automatically — mark it Resolved from the list once it is sorted out.';
+  }
+}
+function scanForExchange(){
+  openBarcodeScanner((code)=>{
+    const match = findItemByBarcode(code);
+    if(!match){ showToast('⚠ No product found with that barcode.'); return; }
+    rf_exchangeItem = match;
+    const picked = document.getElementById('rfExchangePicked');
+    if(picked) picked.textContent = 'Selected: ' + match.item.name + (match.variantIdx!=null ? ' (' + match.item.variants[match.variantIdx].size + ')' : '');
+  });
+}
+function rfExchangeSearch(q){
+  const box = document.getElementById('rfExchangeResults');
+  q = q.trim().toLowerCase();
+  if(!q){ box.style.display='none'; return; }
+  const results = [];
+  inventory.forEach(item=>{
+    if(item.hasSizes){
+      (item.variants||[]).forEach((v,idx)=>{
+        if(item.name.toLowerCase().includes(q) || (v.size&&v.size.toLowerCase().includes(q))) results.push({item, variantIdx:idx, label:item.name+' ('+v.size+') — '+money(v.sellPrice)});
+      });
+    } else if(item.name.toLowerCase().includes(q)){
+      results.push({item, variantIdx:null, label:item.name+' — '+money(item.sellPrice)});
+    }
+  });
+  window._rfExchangeResults = results;
+  if(results.length===0){
+    box.innerHTML = '<div style="padding:8px 12px;color:var(--ink-soft);font-size:13.5px;">No matches</div>';
+    box.style.display='block';
+    return;
+  }
+  box.innerHTML = results.slice(0,8).map((r,i)=>`<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;" onmousedown="pickRfExchange(${i})">${escapeHtml(r.label)}</div>`).join('');
+  box.style.display='block';
+}
+function pickRfExchange(i){
+  const r = window._rfExchangeResults ? window._rfExchangeResults[i] : null;
+  if(!r) return;
+  rf_exchangeItem = r;
+  const picked = document.getElementById('rfExchangePicked');
+  if(picked) picked.textContent = 'Selected: ' + r.label;
+  const box = document.getElementById('rfExchangeResults');
+  if(box) box.style.display='none';
+  const input = document.getElementById('rf_exchangeSearch');
+  if(input) input.value='';
+}
+async function submitReturn(){
+  if(!rf_selectedBill || !rf_selectedLine){ showToast('⚠ Select a bill and item first'); return; }
+  const typeEl = document.querySelector('input[name=rf_type]:checked');
+  const type = typeEl ? typeEl.value : 'return';
+  const qty = parseFloat(document.getElementById('rf_qty').value) || 0;
+  if(qty<=0){ showToast('⚠ Enter a valid quantity'); return; }
+  const reason = document.getElementById('rf_reason').value.trim();
+  const notes = document.getElementById('rf_notes').value.trim();
+  const li = rf_selectedLine;
+  const unitPrice = li.qty ? round2(li.total/li.qty) : li.price;
+  const restock = type!=='warranty' ? document.getElementById('rf_restock').checked : false;
+
+  let exchangeInfo = null;
+  if(type==='exchange'){
+    if(!rf_exchangeItem){ showToast('⚠ Pick or scan the replacement product'); return; }
+    const newItem = rf_exchangeItem.item;
+    const vIdx = rf_exchangeItem.variantIdx;
+    const newPrice = vIdx!=null ? newItem.variants[vIdx].sellPrice : newItem.sellPrice;
+    const newSize = vIdx!=null ? newItem.variants[vIdx].size : '';
+    exchangeInfo = {itemName:newItem.name, size:newSize, qty, priceDiff: round2((newPrice-unitPrice)*qty)};
+    if(vIdx!=null){ newItem.variants[vIdx].qty = round2(Number(newItem.variants[vIdx].qty) - qty); }
+    else { newItem.qty = round2(Number(newItem.qty) - qty); }
+  }
+
+  if(restock){
+    const origItem = inventory.find(i=>i.id===li.itemId);
+    if(origItem){
+      if(origItem.hasSizes){
+        const v = (origItem.variants||[]).find(v=>v.size===li.size);
+        if(v) v.qty = round2(Number(v.qty) + qty);
+      } else {
+        origItem.qty = round2(Number(origItem.qty) + qty);
+      }
+    }
+  }
+
+  const record = {
+    id: uid(), date: new Date().toISOString(), type,
+    billId: rf_selectedBill.id, invoiceNo: rf_selectedBill.invoiceNo,
+    customerName: rf_selectedBill.customer.name, customerPhone: rf_selectedBill.customer.phone,
+    itemName: li.name, size: li.size||'', qty, unit: li.unit,
+    unitPrice, refundAmount: type==='return' ? round2(unitPrice*qty) : 0,
+    restocked: restock, reason, notes,
+    exchangeFor: exchangeInfo,
+    status: type==='warranty' ? 'open' : 'resolved'
+  };
+  returns.push(record);
+  await saveKey('returns', returns);
+  await saveKey('inventory', inventory);
+  closeReturnForm();
+  showToast('✓ Claim saved');
+  render('returns');
+}
+function renderReturnsList(){
+  const el = document.getElementById('returnsList');
+  if(!el) return;
+  if(returns.length===0){
+    el.innerHTML = `<div class="empty-state"><h3>No claims yet</h3><p>Returns, exchanges, and warranty claims you log will show up here.</p></div>`;
+    return;
+  }
+  const sorted = [...returns].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th>Type</th><th>Customer</th><th>Invoice</th><th>Item</th><th>Qty</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${sorted.map(r=>`
+          <tr>
+            <td>${new Date(r.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</td>
+            <td><span class="pill ${r.type==='warranty'?'due':'ok'}">${r.type==='return'?'Return':r.type==='exchange'?'Exchange':'Warranty'}</span></td>
+            <td>${escapeHtml(r.customerName||'')}</td>
+            <td>#${r.invoiceNo}</td>
+            <td>${escapeHtml(r.itemName)}${r.size?' ('+escapeHtml(r.size)+')':''}${r.exchangeFor?' → '+escapeHtml(r.exchangeFor.itemName)+(r.exchangeFor.size?' ('+escapeHtml(r.exchangeFor.size)+')':''):''}</td>
+            <td>${r.qty}</td>
+            <td>${r.type==='return' ? money(r.refundAmount) : (r.exchangeFor ? (r.exchangeFor.priceDiff>=0?'+':'')+money(r.exchangeFor.priceDiff) : '—')}</td>
+            <td>${r.status==='open' ? '<span class="pill due">Open</span>' : '<span class="pill ok">Resolved</span>'}</td>
+            <td>
+              <div class="row-actions">
+                ${r.status==='open' ? `<button class="btn btn-teal btn-sm" onclick="resolveReturn('${r.id}')">Mark Resolved</button>` : ''}
+                <button class="btn btn-danger btn-sm" onclick="deleteReturn('${r.id}')">Delete</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+async function resolveReturn(id){
+  const r = returns.find(x=>x.id===id);
+  if(!r) return;
+  r.status = 'resolved';
+  await saveKey('returns', returns);
+  showToast('✓ Marked resolved');
+  render('returns');
+}
+async function deleteReturn(id){
+  if(!confirm('Delete this claim record? This will not undo any stock changes already made.')) return;
+  returns = returns.filter(x=>x.id!==id);
+  await saveKey('returns', returns);
+  showToast('Deleted');
+  render('returns');
+}
+
+/* ================= SETTINGS ================= */
+function renderSettings(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="panel">
+      <div class="panel-header"><h2>Shop Settings</h2></div>
+      <div class="grid grid-2">
+        <div class="field"><label>Shop name</label><input type="text" id="s_name" value="${escapeHtml(settings.shopName)}"></div>
+        <div class="field"><label>Phone</label><input type="text" id="s_phone" value="${escapeHtml(settings.phone)}"></div>
+      </div>
+      <div class="field"><label>Address</label><input type="text" id="s_address" value="${escapeHtml(settings.address)}"></div>
+      <div class="grid grid-4">
+        <div class="field"><label>GST / Tax number</label><input type="text" id="s_gstnum" value="${escapeHtml(settings.gstNumber)}"></div>
+        <div class="field"><label>Default tax rate (%)</label><input type="number" id="s_gstrate" value="${settings.gstRate}" min="0" step="0.1"></div>
+        <div class="field"><label>Default low-stock threshold</label><input type="number" id="s_lowdefault" value="${settings.lowStockDefault}" min="0" step="1"></div>
+        <div class="field"><label>Remind every (days)</label><input type="number" id="s_reminderdays" value="${settings.reminderIntervalDays}" min="1" step="1"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveSettingsForm()">Save Settings</button>
+
+      <hr class="stitch" style="margin:26px 0;">
+      <h3 style="font-size:16px;margin-bottom:6px;">How to open this app</h3>
+      <p class="helper" style="margin-bottom:6px;">This is a single file — no installation, no separate database, and no internet connection needed to use it day-to-day. On the PC, double-click the file to open it in Chrome/Edge. On the Samsung tablet, add it to the home screen (browser menu → "Add to Home screen") so it opens like an app with one tap.</p>
+      <p class="helper" style="margin-bottom:12px;">Amounts are shown in Pakistani Rupees (Rs).</p>
+
+      <hr class="stitch" style="margin:26px 0;">
+      <h3 style="font-size:16px;margin-bottom:6px;">Camera scanning setup (important for tablet)</h3>
+      <p class="helper" style="margin-bottom:6px;"><strong>Why the tablet camera doesn't open:</strong> phone/tablet browsers refuse camera access on files opened directly from storage (a "file://" address) — it's a security rule of the browser, not a bug in this app. The barcode number can always be typed in by hand as a fallback, but here's the real fix so scanning works properly:</p>
+      <p class="helper" style="margin-bottom:6px;"><strong>Easiest fix (2 minutes, free, no technical setup):</strong> On the PC, go to <strong>netlify.com/drop</strong> in a browser, and drag this HTML file onto the page. It gives you a web address (like <em>https://something.netlify.app</em>) that hosts this exact file for free. Open that address on the tablet instead of the local file, add it to the home screen there, and the camera will work normally and ask for permission. Whenever you make future changes to the app, just drag the new file onto the same Netlify page again to update it.</p>
+      <p class="helper" style="margin-bottom:6px;"><strong>Note:</strong> hosting it this way does not change how your data is stored — it still saves everything on each device separately (see Backup below), nothing is uploaded to Netlify or anywhere else.</p>
+      <p class="helper" style="margin-bottom:12px;"><strong>If you already have stock/bills saved on the tablet under the old file:// version:</strong> that data won't automatically appear on the new web address, since the browser treats it as a separate location. Before switching, go to Backup below, download a backup <em>from the old version</em>, then open the new web address and use Restore from Backup there to bring everything across. Do this once and you're set.</p>
+      <p class="helper" style="margin-bottom:12px;">If the camera still doesn't work on a particular device or browser after that, every scan screen also has a box to type the barcode number in by hand, so billing and inventory are never blocked.</p>
+
+      <hr class="stitch" style="margin:26px 0;">
+      <h3 style="font-size:16px;margin-bottom:6px;">Backup &amp; Restore</h3>
+      <p class="helper" style="margin-bottom:12px;">Your data (stock, bills, returns/warranty claims) is saved on this device automatically. Download a backup file regularly anyway — keep it on a USB drive, email it to yourself, or save it to Google Drive. If this tablet is ever lost, damaged, or its browser data is cleared, this file is how you get everything back. A backup taken on the PC can be restored on the tablet and vice versa.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-teal" onclick="downloadBackup()">⬇ Download Backup (.json)</button>
+        <label class="btn btn-outline" style="margin:0;">
+          ⬆ Restore from Backup
+          <input type="file" accept="application/json" style="display:none;" onchange="restoreBackup(this.files[0])">
+        </label>
+      </div>
+      <div class="helper" id="lastBackupNote" style="margin-top:8px;"></div>
+
+      <hr class="stitch" style="margin:26px 0;">
+      <p class="helper" style="margin-bottom:10px;">Note: reminders show up as alerts inside this app (on the Dashboard and Ledger tab) when you open it — there's no background notification outside the browser, so it's worth checking the app every couple of days.</p>
+
+      <hr class="stitch" style="margin:26px 0;">
+      <h3 style="font-size:16px;margin-bottom:10px;">Danger zone</h3>
+      <p class="helper" style="margin-bottom:10px;">This will permanently erase all inventory and bill records from this device.</p>
+      <button class="btn btn-danger" onclick="resetAllData()">Erase all data</button>
+    </div>
+  `;
+  const lastBackup = localStorage.getItem(STORAGE_PREFIX + 'lastBackupAt');
+  if(lastBackup){
+    document.getElementById('lastBackupNote').textContent = 'Last backup downloaded: ' + new Date(lastBackup).toLocaleString();
+  }
+}
+function downloadBackup(){
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    app: 'Workshop Ledger',
+    version: 2,
+    settings, inventory, bills, returns
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateTag = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `workshop-ledger-backup-${dateTag}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  localStorage.setItem(STORAGE_PREFIX + 'lastBackupAt', new Date().toISOString());
+  showToast('✓ Backup downloaded');
+  renderSettings();
+}
+function restoreBackup(file){
+  if(!file) return;
+  if(!confirm('Restoring will replace all current inventory, bills and settings on this device with the backup file. Continue?')) return;
+  const reader = new FileReader();
+  reader.onload = async (e)=>{
+    try{
+      const data = JSON.parse(e.target.result);
+      if(!data.inventory || !data.bills || !data.settings){ throw new Error('not a valid backup'); }
+      settings = {...DEFAULT_SETTINGS, ...data.settings};
+      inventory = data.inventory;
+      bills = data.bills;
+      returns = data.returns || [];
+      bills.forEach(b=>{
+        if(!b.payment){ b.payment = {status:'paid', method:'cash', amountPaid:b.total, amountDue:0, payments:[{date:b.date, amount:b.total, method:'cash'}], lastReminded:null}; }
+      });
+      saveKey('settings', settings);
+      saveKey('inventory', inventory);
+      saveKey('bills', bills);
+      saveKey('returns', returns);
+      showToast('✓ Backup restored');
+      render('dashboard');
+    }catch(err){
+      showToast('⚠ That file could not be read as a backup.');
+    }
+  };
+  reader.readAsText(file);
+}
+async function saveSettingsForm(){
+  settings.shopName = document.getElementById('s_name').value.trim() || DEFAULT_SETTINGS.shopName;
+  settings.phone = document.getElementById('s_phone').value.trim();
+  settings.address = document.getElementById('s_address').value.trim();
+  settings.gstNumber = document.getElementById('s_gstnum').value.trim();
+  settings.gstRate = parseFloat(document.getElementById('s_gstrate').value) || 0;
+  settings.lowStockDefault = parseFloat(document.getElementById('s_lowdefault').value) || 0;
+  settings.reminderIntervalDays = parseFloat(document.getElementById('s_reminderdays').value) || 2;
+  await saveKey('settings', settings);
+  showToast('✓ Settings saved');
+  render('settings');
+}
+async function resetAllData(){
+  if(!confirm('This will permanently delete ALL inventory, bills, and return/warranty records. Are you sure?')) return;
+  if(!confirm('Really sure? This cannot be undone.')) return;
+  inventory = [];
+  bills = [];
+  returns = [];
+  settings = {...DEFAULT_SETTINGS};
+  await saveKey('inventory', inventory);
+  await saveKey('bills', bills);
+  await saveKey('returns', returns);
+  await saveKey('settings', settings);
+  showToast('All data erased');
+  render('dashboard');
+}
+
+/* ================= INIT ================= */
+(async function init(){
+  await loadAll();
+  render('dashboard');
+})();
+</script>
+</body>
+</html>
