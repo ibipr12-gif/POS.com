@@ -357,6 +357,7 @@
     <h1 id="topShopName">Workshop Ledger</h1>
     <div class="tagline">Stock &amp; Billing</div>
   </div>
+  <div id="syncStatus" style="font-size:12.5px;font-weight:600;padding:5px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);white-space:nowrap;">🔴 Connecting…</div>
   <div class="date" id="topDate"></div>
 </div>
 
@@ -424,6 +425,9 @@
      tablet/browser's own built-in scanner if these fail to load. -->
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 
 <script>
 /* ================= STATE ================= */
@@ -456,6 +460,112 @@ const UNIT_SUGGESTIONS = ["pcs","meter","kg","roll","set","yard","sheet"];
    which is exactly why the Settings tab has a Backup / Restore feature. */
 const STORAGE_PREFIX = 'workshopLedger_';
 
+/* -------- cloud sync (Firebase Firestore) --------
+   Every device reads/writes the SAME cloud project, so the PC and the
+   tablet(s) always show the same live stock/bills. localStorage is kept
+   too, purely as an instant-load cache and an offline fallback if the
+   internet drops mid-use — it is never the source of truth once the
+   cloud is connected. */
+const firebaseConfig = {
+  apiKey: "AIzaSyBuCAJrgGuxELK6YQVvcmVE8f5ErjUCvbk",
+  authDomain: "pos-latif-sons.firebaseapp.com",
+  projectId: "pos-latif-sons",
+  storageBucket: "pos-latif-sons.firebasestorage.app",
+  messagingSenderId: "19620358592",
+  appId: "1:19620358592:web:8589aa3197b6faaaaa4025"
+};
+const FS_COLLECTIONS = {inventory:'inventory', bills:'bills', returns:'returns'};
+let fbDb = null, fbAuth = null, fbReady = false;
+let fsKnownIds = {inventory:new Set(), bills:new Set(), returns:new Set()};
+let fsSeeded = {inventory:false, bills:false, returns:false, settings:false};
+let suppressAutoRerender = false; // true while an in-progress form (item/return) is open, so a background sync never wipes it
+
+function updateSyncStatus(state){
+  const el = document.getElementById('syncStatus');
+  if(!el) return;
+  if(state==='online'){ el.textContent = '🟢 Synced'; el.title = 'Connected — changes are shared live with every other device.'; }
+  else if(state==='syncing'){ el.textContent = '🟡 Saving…'; el.title = 'Sending changes to the cloud…'; }
+  else{ el.textContent = '🔴 Offline'; el.title = 'No connection right now — saved on this device only. Will sync automatically once the internet is back.'; }
+}
+
+function initFirebase(){
+  try{
+    if(typeof firebase === 'undefined'){ updateSyncStatus('offline'); return; }
+    firebase.initializeApp(firebaseConfig);
+    fbAuth = firebase.auth();
+    fbDb = firebase.firestore();
+    fbAuth.onAuthStateChanged(user=>{
+      if(user){
+        fbReady = true;
+        attachCloudListeners();
+      } else {
+        fbAuth.signInAnonymously().catch(()=>{ updateSyncStatus('offline'); });
+      }
+    });
+  }catch(err){
+    updateSyncStatus('offline');
+  }
+}
+
+function rerenderIfSafe(){
+  if(!dataReady || suppressAutoRerender) return;
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+  if(activeTab==='newbill') return; // a bill in progress should never be wiped by a background sync
+  render();
+}
+
+function attachCloudListeners(){
+  fbDb.collection('settings').doc('main').onSnapshot(doc=>{
+    if(doc.exists){
+      settings = {...DEFAULT_SETTINGS, ...doc.data()};
+      localStorage.setItem(STORAGE_PREFIX+'settings', JSON.stringify(settings));
+      rerenderIfSafe();
+    } else if(!fsSeeded.settings){
+      fsSeeded.settings = true;
+      fbDb.collection('settings').doc('main').set(settings || DEFAULT_SETTINGS);
+    }
+    updateSyncStatus('online');
+  }, ()=>updateSyncStatus('offline'));
+
+  const collectionState = {
+    inventory: { get: ()=>inventory, set: v=>{ inventory = v; } },
+    bills:     { get: ()=>bills,     set: v=>{ bills = v; } },
+    returns:   { get: ()=>returns,   set: v=>{ returns = v; } }
+  };
+
+  Object.keys(FS_COLLECTIONS).forEach(key=>{
+    const state = collectionState[key];
+    fbDb.collection(FS_COLLECTIONS[key]).onSnapshot(snap=>{
+      if(snap.empty && !fsSeeded[key] && state.get().length>0){
+        fsSeeded[key] = true;
+        pushCollectionToCloud(key, state.get());
+        return;
+      }
+      fsSeeded[key] = true;
+      const arr = snap.docs.map(d=>({id:d.id, ...d.data()}));
+      if(key==='bills'){
+        arr.forEach(b=>{ if(!b.payment){ b.payment = {status:'paid', method:'cash', amountPaid:b.total, amountDue:0, payments:[{date:b.date, amount:b.total, method:'cash'}], lastReminded:null}; } });
+      }
+      state.set(arr);
+      fsKnownIds[key] = new Set(arr.map(r=>r.id));
+      localStorage.setItem(STORAGE_PREFIX+key, JSON.stringify(arr));
+      rerenderIfSafe();
+    }, ()=>updateSyncStatus('offline'));
+  });
+}
+
+async function pushCollectionToCloud(key, arr){
+  const coll = fbDb.collection(FS_COLLECTIONS[key]);
+  const batch = fbDb.batch();
+  arr.forEach(rec=>{
+    if(!rec.id) rec.id = uid();
+    const data = JSON.parse(JSON.stringify(rec));
+    delete data.id;
+    batch.set(coll.doc(rec.id), data);
+  });
+  try{ await batch.commit(); }catch(e){ /* will retry on next save */ }
+}
+
 function loadKey(key, fallback){
   try{
     const raw = localStorage.getItem(STORAGE_PREFIX + key);
@@ -465,29 +575,59 @@ function loadKey(key, fallback){
     return fallback;
   }
 }
-function saveKey(key, value){
+async function saveKey(key, value){
   try{
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
-    return true;
   }catch(e){
     showToast("⚠ Could not save to this device. Storage may be full or blocked.");
-    return false;
+  }
+  if(!fbReady || !fbDb){ updateSyncStatus('offline'); return true; }
+  try{
+    updateSyncStatus('syncing');
+    if(key==='settings'){
+      const data = JSON.parse(JSON.stringify(value||{}));
+      await fbDb.collection('settings').doc('main').set(data);
+    } else if(FS_COLLECTIONS[key]){
+      const coll = fbDb.collection(FS_COLLECTIONS[key]);
+      const arr = value || [];
+      const currentIds = new Set();
+      const batch = fbDb.batch();
+      arr.forEach(rec=>{
+        if(!rec.id) rec.id = uid();
+        currentIds.add(rec.id);
+        const data = JSON.parse(JSON.stringify(rec));
+        delete data.id;
+        batch.set(coll.doc(rec.id), data);
+      });
+      (fsKnownIds[key] || new Set()).forEach(oldId=>{
+        if(!currentIds.has(oldId)) batch.delete(coll.doc(oldId));
+      });
+      await batch.commit();
+      fsKnownIds[key] = currentIds;
+    }
+    updateSyncStatus('online');
+    return true;
+  }catch(e){
+    updateSyncStatus('offline');
+    showToast('⚠ Saved on this device — will sync to other devices once back online.');
+    return true;
   }
 }
 
 async function loadAll(){
+  // instant local cache first, so the screen is never blank while the cloud connects
   settings = await loadKey('settings', DEFAULT_SETTINGS);
   settings = {...DEFAULT_SETTINGS, ...settings};
   inventory = await loadKey('inventory', []);
   bills = await loadKey('bills', []);
   returns = await loadKey('returns', []);
-  // migrate old bills without payment info -> treat as paid in full
   bills.forEach(b=>{
     if(!b.payment){
       b.payment = {status:'paid', method:'cash', amountPaid:b.total, amountDue:0, payments:[{date:b.date, amount:b.total, method:'cash'}], lastReminded:null};
     }
   });
   dataReady = true;
+  initFirebase();
 }
 
 /* ================= UTIL ================= */
@@ -899,6 +1039,7 @@ function renderSizedItemRows(i){
 }
 
 function openItemForm(id){
+  suppressAutoRerender = true;
   editingItemId = id || null;
   const item = id ? inventory.find(i=>i.id===id) : null;
   formVariants = item && item.hasSizes ? JSON.parse(JSON.stringify(item.variants||[])) : [];
@@ -1075,6 +1216,7 @@ function closeBarcodeModal(){
   document.getElementById('barcode-print-overlay').style.display='none';
 }
 function closeItemForm(){
+  suppressAutoRerender = false;
   editingItemId = null;
   formVariants = [];
   document.getElementById('itemFormWrap').innerHTML = '';
@@ -1726,6 +1868,7 @@ function startReturnForBill(billId){
 }
 
 function openReturnForm(){
+  suppressAutoRerender = true;
   rf_selectedBill = null;
   rf_selectedLine = null;
   rf_exchangeItem = null;
@@ -1747,6 +1890,7 @@ function openReturnForm(){
   `;
 }
 function closeReturnForm(){
+  suppressAutoRerender = false;
   const wrap = document.getElementById('returnFormWrap');
   if(wrap) wrap.innerHTML = '';
 }
@@ -2111,7 +2255,7 @@ async function saveSettingsForm(){
   render('settings');
 }
 async function resetAllData(){
-  if(!confirm('This will permanently delete ALL inventory, bills, and return/warranty records. Are you sure?')) return;
+  if(!confirm('This will permanently delete ALL inventory, bills, and return/warranty records — on EVERY device connected to this shop, not just this one. Are you sure?')) return;
   if(!confirm('Really sure? This cannot be undone.')) return;
   inventory = [];
   bills = [];
