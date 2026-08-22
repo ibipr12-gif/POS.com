@@ -358,6 +358,7 @@
     <div class="tagline">Stock &amp; Billing</div>
   </div>
   <div id="syncStatus" style="font-size:12.5px;font-weight:600;padding:5px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);white-space:nowrap;">🔴 Connecting…</div>
+  <button class="btn btn-outline btn-sm" style="margin:0 10px;" onclick="lockAppNow()" title="Lock the app">🔒 Lock</button>
   <div class="date" id="topDate"></div>
 </div>
 
@@ -383,6 +384,21 @@
       <button class="btn btn-outline" onclick="closeInvoice()">Close</button>
       <button class="btn btn-primary" onclick="window.print()">Print / Save PDF</button>
     </div>
+  </div>
+</div>
+
+<!-- App lock overlay -->
+<div id="lock-overlay" style="position:fixed;inset:0;background:#2B2016;z-index:500;display:flex;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:14px;padding:32px 26px;max-width:340px;width:100%;text-align:center;">
+    <div style="font-size:32px;margin-bottom:6px;">🔒</div>
+    <h2 style="margin-bottom:6px;font-size:19px;">Enter Access Code</h2>
+    <p class="helper" style="margin-bottom:16px;">This ledger is locked. Enter the code to continue.</p>
+    <input type="password" id="lockCodeInput" inputmode="numeric" autocomplete="off" placeholder="Access code" disabled
+      style="width:100%;font-size:20px;text-align:center;letter-spacing:4px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;box-sizing:border-box;"
+      onkeydown="if(event.key==='Enter') tryUnlock();">
+    <button class="btn btn-primary" id="lockUnlockBtn" style="width:100%;" onclick="tryUnlock()" disabled>Unlock</button>
+    <div id="lockError" style="color:#b3261e;font-size:13px;margin-top:10px;min-height:16px;"></div>
+    <div id="lockWaitMsg" style="color:var(--ink-soft);font-size:13px;margin-top:6px;">Connecting…</div>
   </div>
 </div>
 
@@ -446,7 +462,8 @@ const DEFAULT_SETTINGS = {
   gstRate: 0,
   invoiceCounter: 1,
   lowStockDefault: 5,
-  reminderIntervalDays: 2
+  reminderIntervalDays: 2,
+  accessCode: ""
 };
 
 const CATEGORY_SUGGESTIONS = ["Sofa Raw Material","Mattress","Pillows","Blankets","Cushions","Fabric","Foam","Other"];
@@ -525,6 +542,7 @@ function attachCloudListeners(){
       fbDb.collection('settings').doc('main').set(settings || DEFAULT_SETTINGS);
     }
     updateSyncStatus('online');
+    markSettingsConfirmed();
   }, ()=>updateSyncStatus('offline'));
 
   const collectionState = {
@@ -844,6 +862,7 @@ function switchTab(tab){
 
 /* ================= RENDER ROUTER ================= */
 function render(tab){
+  if(!appUnlocked) return; // never draw the app while locked, regardless of what triggered this call
   if(!tab){
     tab = document.querySelector('.tab-btn.active')?.dataset.tab || 'dashboard';
   }
@@ -2156,6 +2175,15 @@ function renderSettings(){
       <button class="btn btn-primary" onclick="saveSettingsForm()">Save Settings</button>
 
       <hr class="stitch" style="margin:26px 0;">
+      <h3 style="font-size:16px;margin-bottom:6px;">App Lock</h3>
+      <p class="helper" style="margin-bottom:10px;">Require a code before anyone can open this app on this browser. Leave the box empty and save to turn the lock off entirely. <strong>Note:</strong> this is a simple deterrent for casual snooping (like a phone lock screen) — it is not strong security, since anyone technical who inspects the page source could bypass it. Don't rely on it to protect truly sensitive data.</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+        <input type="text" id="s_accessCode" placeholder="e.g. 1234" value="${escapeHtml(settings.accessCode||'')}" style="max-width:160px;">
+        <button class="btn btn-primary btn-sm" onclick="saveAccessCode()">Save Code</button>
+        <button class="btn btn-outline btn-sm" onclick="lockAppNow()">🔒 Lock Now</button>
+      </div>
+
+      <hr class="stitch" style="margin:26px 0;">
       <h3 style="font-size:16px;margin-bottom:6px;">How to open this app</h3>
       <p class="helper" style="margin-bottom:6px;">This is a single file — no installation, no separate database, and no internet connection needed to use it day-to-day. On the PC, double-click the file to open it in Chrome/Edge. On the Samsung tablet, add it to the home screen (browser menu → "Add to Home screen") so it opens like an app with one tap.</p>
       <p class="helper" style="margin-bottom:12px;">Amounts are shown in Pakistani Rupees (Rs).</p>
@@ -2269,10 +2297,70 @@ async function resetAllData(){
   render('dashboard');
 }
 
+/* ================= APP LOCK ================= */
+let appUnlocked = false;
+let settingsConfirmed = false; // true once we've heard from the cloud (or given up waiting because we're offline)
+
+function markSettingsConfirmed(){
+  if(settingsConfirmed) return;
+  settingsConfirmed = true;
+  const input = document.getElementById('lockCodeInput');
+  const btn = document.getElementById('lockUnlockBtn');
+  const waitMsg = document.getElementById('lockWaitMsg');
+  if(input) input.disabled = false;
+  if(btn) btn.disabled = false;
+  if(waitMsg) waitMsg.style.display = 'none';
+  // if it turns out no code is set, don't make staff type anything — just open straight away
+  if(!settings.accessCode){
+    appUnlocked = true;
+    document.getElementById('lock-overlay').style.display = 'none';
+    render('dashboard');
+  } else if(input){
+    input.focus();
+  }
+}
+
+function tryUnlock(){
+  if(!settingsConfirmed) return; // guard: button/enter can't fire this until we actually know the real code
+  const input = document.getElementById('lockCodeInput');
+  const val = (input.value||'').trim();
+  const correct = settings.accessCode ? String(settings.accessCode) : '';
+  if(!correct || val === correct){
+    appUnlocked = true;
+    document.getElementById('lock-overlay').style.display = 'none';
+    input.value = '';
+    document.getElementById('lockError').textContent = '';
+    render('dashboard');
+  } else {
+    document.getElementById('lockError').textContent = 'Wrong code. Try again.';
+    input.value = '';
+    input.focus();
+  }
+}
+function lockAppNow(){
+  appUnlocked = false;
+  document.getElementById('lock-overlay').style.display = 'flex';
+  const input = document.getElementById('lockCodeInput');
+  input.value = '';
+  document.getElementById('lockError').textContent = '';
+  setTimeout(()=>input.focus(), 50);
+}
+async function saveAccessCode(){
+  const val = document.getElementById('s_accessCode').value.trim();
+  settings.accessCode = val;
+  await saveKey('settings', settings);
+  showToast(val ? '✓ Access code set' : '✓ Lock turned off');
+}
+
 /* ================= INIT ================= */
 (async function init(){
   await loadAll();
-  render('dashboard');
+  // The lock overlay is visible and disabled by default (see HTML). We never assume
+  // "no code" just from the instantly-available local cache — that cache can be
+  // stale or empty on a device that hasn't synced yet, which would wrongly let
+  // someone straight in. We wait for the cloud to confirm the real code first,
+  // and only fall back to the local cache if we're genuinely offline.
+  setTimeout(markSettingsConfirmed, 5000); // offline fallback: stop waiting after 5s
 })();
 </script>
 </body>
