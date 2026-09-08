@@ -326,9 +326,10 @@
 
   @media print{
     body *{visibility:hidden;}
-    #invoice-overlay, #invoice-overlay *, #barcode-print-overlay, #barcode-print-overlay *{visibility:visible;}
+    #invoice-overlay, #invoice-overlay *, #barcode-print-overlay, #barcode-print-overlay *, #receipt-print, #receipt-print *{visibility:visible;}
     #invoice-overlay{position:absolute;inset:0;background:#fff;padding:0;}
     #barcode-print-overlay{position:absolute;inset:0;background:#fff;padding:0;}
+    #receipt-print{position:absolute;inset:0;background:#fff;padding:0;}
     .invoice-actions{display:none;}
     .invoice-sheet{box-shadow:none;max-width:100%;}
     #barcode-print-overlay .modal-close{display:none;}
@@ -369,6 +370,7 @@
   <button class="tab-btn" data-tab="bills">Bills</button>
   <button class="tab-btn" data-tab="ledger">Ledger <span class="badge warn" id="ledgerBadge" style="display:none;">0</span></button>
   <button class="tab-btn" data-tab="returns">Returns <span class="badge warn" id="returnsBadge" style="display:none;">0</span></button>
+  <button class="tab-btn" data-tab="orders">Order Lists</button>
   <button class="tab-btn" data-tab="settings">Settings</button>
 </div>
 
@@ -381,10 +383,16 @@
   <div>
     <div class="invoice-sheet" id="invoiceSheet"></div>
     <div class="invoice-actions">
+      <button class="btn btn-teal" style="font-size:16px;padding:12px 22px;" onclick="printReceipt(currentInvoiceBill)">🖨 Print Receipt</button>
+      <button class="btn btn-outline" onclick="window.print()">Print / Save Full Invoice PDF</button>
       <button class="btn btn-outline" onclick="closeInvoice()">Close</button>
-      <button class="btn btn-primary" onclick="window.print()">Print / Save PDF</button>
     </div>
   </div>
+</div>
+
+<!-- Hidden 80mm receipt content, only shown to the browser at the moment of printing -->
+<div id="receipt-print" style="display:none;">
+  <div id="receiptSheetContent" style="width:74mm;margin:0 auto;font-family:'Courier New',Courier,monospace;font-size:12px;line-height:1.45;color:#000;padding:4px 2px;"></div>
 </div>
 
 <!-- App lock overlay -->
@@ -444,6 +452,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
 <script>
 /* ================= STATE ================= */
@@ -451,6 +461,7 @@ let settings = null;
 let inventory = [];
 let bills = [];
 let returns = [];
+let orders = [];
 let currentBillLines = []; // {itemId, variantIdx, name, size, unit, qty, price, discountPct, available}
 let dataReady = false;
 
@@ -491,10 +502,10 @@ const firebaseConfig = {
   messagingSenderId: "19620358592",
   appId: "1:19620358592:web:8589aa3197b6faaaaa4025"
 };
-const FS_COLLECTIONS = {inventory:'inventory', bills:'bills', returns:'returns'};
+const FS_COLLECTIONS = {inventory:'inventory', bills:'bills', returns:'returns', orders:'orders'};
 let fbDb = null, fbAuth = null, fbReady = false;
-let fsKnownIds = {inventory:new Set(), bills:new Set(), returns:new Set()};
-let fsSeeded = {inventory:false, bills:false, returns:false, settings:false};
+let fsKnownIds = {inventory:new Set(), bills:new Set(), returns:new Set(), orders:new Set()};
+let fsSeeded = {inventory:false, bills:false, returns:false, orders:false, settings:false};
 let suppressAutoRerender = false; // true while an in-progress form (item/return) is open, so a background sync never wipes it
 
 function updateSyncStatus(state){
@@ -527,7 +538,7 @@ function initFirebase(){
 function rerenderIfSafe(){
   if(!dataReady || suppressAutoRerender) return;
   const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-  if(activeTab==='newbill') return; // a bill in progress should never be wiped by a background sync
+  if(activeTab==='newbill' || activeTab==='orders') return; // a bill or order list in progress should never be wiped by a background sync
   render();
 }
 
@@ -548,7 +559,8 @@ function attachCloudListeners(){
   const collectionState = {
     inventory: { get: ()=>inventory, set: v=>{ inventory = v; } },
     bills:     { get: ()=>bills,     set: v=>{ bills = v; } },
-    returns:   { get: ()=>returns,   set: v=>{ returns = v; } }
+    returns:   { get: ()=>returns,   set: v=>{ returns = v; } },
+    orders:    { get: ()=>orders,    set: v=>{ orders = v; } }
   };
 
   Object.keys(FS_COLLECTIONS).forEach(key=>{
@@ -639,6 +651,7 @@ async function loadAll(){
   inventory = await loadKey('inventory', []);
   bills = await loadKey('bills', []);
   returns = await loadKey('returns', []);
+  orders = await loadKey('orders', []);
   bills.forEach(b=>{
     if(!b.payment){
       b.payment = {status:'paid', method:'cash', amountPaid:b.total, amountDue:0, payments:[{date:b.date, amount:b.total, method:'cash'}], lastReminded:null};
@@ -881,6 +894,7 @@ function render(tab){
   else if(tab==='bills') renderBills();
   else if(tab==='ledger') renderLedger();
   else if(tab==='returns') renderReturns();
+  else if(tab==='orders') renderOrders();
   else if(tab==='settings') renderSettings();
 }
 
@@ -979,6 +993,15 @@ function renderInventory(){
         <h2>Inventory</h2>
         <button class="btn btn-primary btn-sm" onclick="openItemForm()">+ Add Item</button>
       </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <button class="btn btn-outline btn-sm" onclick="downloadStockTemplate()">⬇ Download Import Template</button>
+        <label class="btn btn-outline btn-sm" style="margin:0;">
+          ⬆ Import Stock from Excel
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleStockImportFile(this.files[0]); this.value='';">
+        </label>
+        <button class="btn btn-teal btn-sm" onclick="exportStockExcel()">⬇ Export Current Stock (Excel)</button>
+      </div>
+      <div id="importPreviewWrap"></div>
       <div id="itemFormWrap"></div>
       <hr class="stitch" style="margin:16px 0;">
       <div id="inventoryList"></div>
@@ -1668,6 +1691,7 @@ function renderBillsList(list){
             <td>${b.payment.amountDue>0.001 ? `<span class="pill due">Due ${money(b.payment.amountDue)}</span>` : `<span class="pill ok">Paid</span>`}</td>
             <td>
               <div class="row-actions">
+                <button class="btn btn-teal btn-sm" onclick='printReceipt(${JSON.stringify(b).replace(/'/g,"&#39;")})'>🖨 Print</button>
                 <button class="btn btn-outline btn-sm" onclick='showInvoice(${JSON.stringify(b).replace(/'/g,"&#39;")})'>View</button>
                 <button class="btn btn-outline btn-sm" onclick="startReturnForBill('${b.id}')">Return/Exchange</button>
               </div>
@@ -1799,7 +1823,9 @@ async function markReminded(billId){
 }
 
 /* ================= INVOICE VIEW / PRINT ================= */
+let currentInvoiceBill = null;
 function showInvoice(bill){
+  currentInvoiceBill = bill;
   const sheet = document.getElementById('invoiceSheet');
   const hasDiscount = bill.items.some(i=>i.discountPct>0);
   sheet.innerHTML = `
@@ -1857,6 +1883,77 @@ function showInvoice(bill){
 }
 function closeInvoice(){
   document.getElementById('invoice-overlay').classList.remove('open');
+}
+
+/* -------- 80mm thermal receipt printing -------- */
+function buildReceiptHTML(bill){
+  const line = '<div style="border-top:1px dashed #000;margin:7px 0;"></div>';
+  return `
+    <div style="text-align:center;margin-bottom:6px;">
+      <div style="font-weight:700;font-size:15px;">${escapeHtml(settings.shopName)}</div>
+      ${settings.address?`<div style="font-size:11px;">${escapeHtml(settings.address)}</div>`:''}
+      ${settings.phone?`<div style="font-size:11px;">Ph: ${escapeHtml(settings.phone)}</div>`:''}
+      ${settings.gstNumber?`<div style="font-size:11px;">Tax No: ${escapeHtml(settings.gstNumber)}</div>`:''}
+    </div>
+    ${line}
+    <div style="font-size:11px;">
+      <div>Invoice #${bill.invoiceNo}</div>
+      <div>${new Date(bill.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} ${new Date(bill.date).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
+      <div>Customer: ${escapeHtml(bill.customer.name)}</div>
+      ${bill.customer.phone?`<div>Ph: ${escapeHtml(bill.customer.phone)}</div>`:''}
+    </div>
+    ${line}
+    ${bill.items.map(i=>`
+      <div style="font-size:12px;margin-bottom:4px;">
+        <div>${escapeHtml(i.name)}${i.size?' ('+escapeHtml(i.size)+')':''}</div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;">
+          <span>${i.qty} ${escapeHtml(i.unit)} x ${money(i.price)}${i.discountPct>0?` (-${i.discountPct}%)`:''}</span>
+          <span>${money(i.total)}</span>
+        </div>
+      </div>
+    `).join('')}
+    ${line}
+    <div style="font-size:12px;">
+      <div style="display:flex;justify-content:space-between;"><span>Subtotal</span><span>${money(bill.grossSubtotal)}</span></div>
+      ${bill.discountTotal>0?`<div style="display:flex;justify-content:space-between;"><span>Discount</span><span>-${money(bill.discountTotal)}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;"><span>Tax (${bill.gstRate}%)</span><span>${money(bill.gstAmount)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;border-top:1px solid #000;margin-top:5px;padding-top:5px;"><span>TOTAL</span><span>${money(bill.total)}</span></div>
+    </div>
+    ${line}
+    <div style="font-size:11px;">
+      ${bill.payment.amountDue>0.001
+        ? `<div>Paid: ${money(bill.payment.amountPaid)}${bill.payment.method?' via '+methodLabel(bill.payment.method):''}</div><div style="font-weight:700;">Due: ${money(bill.payment.amountDue)}</div><div>${bill.payment.status==='credit'?'Credit — pay later':'Partially paid'}</div>`
+        : `<div>Paid in full — ${money(bill.payment.amountPaid)}${bill.payment.method?' via '+methodLabel(bill.payment.method):''}</div>`}
+    </div>
+    ${line}
+    <div style="text-align:center;font-size:11px;margin-top:8px;">Thank you for your business!</div>
+    <div style="height:8mm;"></div>
+  `;
+}
+function printReceipt(bill){
+  if(!bill){ showToast('⚠ No bill to print'); return; }
+  document.getElementById('receiptSheetContent').innerHTML = buildReceiptHTML(bill);
+
+  // Scope the page size to 80mm just for this one print job, so it doesn't
+  // affect the full-page invoice or barcode-label printing elsewhere.
+  let pageStyle = document.getElementById('receiptPageStyle');
+  if(!pageStyle){
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'receiptPageStyle';
+    document.head.appendChild(pageStyle);
+  }
+  pageStyle.textContent = '@page{ size:80mm auto; margin:2mm; }';
+
+  document.getElementById('receipt-print').style.display = 'block';
+
+  const cleanup = ()=>{
+    document.getElementById('receipt-print').style.display = 'none';
+    if(pageStyle) pageStyle.textContent = '';
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(()=>{ window.print(); }, 60);
+  setTimeout(cleanup, 5000); // safety net in case afterprint doesn't fire on this browser
 }
 
 /* ================= RETURNS / EXCHANGE / WARRANTY ================= */
@@ -2155,6 +2252,680 @@ async function deleteReturn(id){
   render('returns');
 }
 
+/* ================= ORDER LISTS (truck / restock deliveries) ================= */
+let currentOrderLines = []; // {itemId, variantIdx, name, size, unit, qty, costPrice, isNew}
+
+function renderOrders(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Order Lists (Truck Deliveries)</h2>
+        <button class="btn btn-primary btn-sm" onclick="openOrderForm()">+ New Order List</button>
+      </div>
+      <p class="helper" style="margin-bottom:14px;">Log what comes in on each truck or delivery. Search or scan products already in your stock list, enter how many arrived and at what cost — saving the order list adds that quantity straight into your stock and updates the cost price for those items.</p>
+      <div id="orderFormWrap"></div>
+      <div id="ordersList"></div>
+    </div>
+  `;
+  renderOrdersList();
+}
+function openOrderForm(){
+  suppressAutoRerender = true;
+  currentOrderLines = [];
+  const wrap = document.getElementById('orderFormWrap');
+  if(!wrap) return;
+  wrap.innerHTML = `
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:18px;">
+      <div class="panel-header" style="margin-bottom:12px;">
+        <h3 style="font-size:16px;">New Order List</h3>
+        <button class="modal-close" onclick="closeOrderForm()">✕</button>
+      </div>
+      <div class="grid grid-2">
+        <div class="field"><label>Truck / Supplier Reference (optional)</label><input type="text" id="order_reference" placeholder="e.g. Truck #4 - ABC Foam Supplier"></div>
+        <div class="field"><label>Notes (optional)</label><input type="text" id="order_notes" placeholder="Any extra detail"></div>
+      </div>
+      <hr class="stitch" style="margin:14px 0;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-start;">
+        <button class="btn btn-teal" onclick="scanToAddOrderItem()">📷 Scan Barcode to Add</button>
+        <div style="flex:1;min-width:220px;position:relative;">
+          <input type="text" id="orderQuickSearch" placeholder="Search existing product by name / size / barcode…" autocomplete="off"
+            oninput="onOrderQuickSearchInput(this.value)"
+            onblur="setTimeout(()=>{const b=document.getElementById('orderQuickSearchResults'); if(b) b.style.display='none';},150)">
+          <div id="orderQuickSearchResults" style="position:absolute;z-index:30;background:#fff;border:1px solid var(--border);border-radius:8px;width:100%;max-height:230px;overflow-y:auto;display:none;box-shadow:var(--shadow);"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <input type="text" id="order_newItemName" placeholder="Product not in stock yet? Type its name here…" style="flex:1;min-width:200px;">
+        <button class="btn btn-outline btn-sm" onclick="addNewOrderItem()">+ Add as New Product</button>
+      </div>
+      <div id="orderLines"></div>
+      <hr class="stitch" style="margin:14px 0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div id="orderTotalCost" style="font-weight:700;font-size:15px;"></div>
+        <button class="btn btn-primary" onclick="submitOrder()">Save Order List &amp; Update Stock</button>
+      </div>
+    </div>
+  `;
+  renderOrderLines();
+}
+function closeOrderForm(){
+  suppressAutoRerender = false;
+  currentOrderLines = [];
+  const wrap = document.getElementById('orderFormWrap');
+  if(wrap) wrap.innerHTML = '';
+}
+function scanToAddOrderItem(){
+  openBarcodeScanner((code)=>{
+    const match = findItemByBarcode(code);
+    if(!match){ showToast('⚠ No product matches that barcode. Try search, or add it as new below.'); return; }
+    addItemToOrderByMatch(match.item, match.variantIdx);
+  });
+}
+function addItemToOrderByMatch(item, variantIdx){
+  const existing = currentOrderLines.find(l=> l.itemId===item.id && l.variantIdx===variantIdx);
+  if(existing){
+    existing.qty = round2((existing.qty||0) + 1);
+  } else {
+    const cost = variantIdx!=null ? item.variants[variantIdx].costPrice : item.costPrice;
+    const size = variantIdx!=null ? item.variants[variantIdx].size : '';
+    currentOrderLines.push({itemId:item.id, variantIdx: variantIdx!=null?variantIdx:null, name:item.name, size, unit:item.unit, qty:1, costPrice:cost, isNew:false});
+  }
+  renderOrderLines();
+  showToast('✓ Added ' + item.name + (variantIdx!=null ? ' (' + item.variants[variantIdx].size + ')' : ''));
+}
+function addNewOrderItem(){
+  const nameInput = document.getElementById('order_newItemName');
+  const name = nameInput.value.trim();
+  if(!name){ showToast('⚠ Type a product name first'); return; }
+  currentOrderLines.push({itemId:null, variantIdx:null, name, size:'', unit:'pcs', qty:1, costPrice:0, isNew:true});
+  nameInput.value = '';
+  renderOrderLines();
+}
+function onOrderQuickSearchInput(q){
+  const box = document.getElementById('orderQuickSearchResults');
+  q = q.trim().toLowerCase();
+  if(!q){ box.style.display='none'; box.innerHTML=''; return; }
+  const results = [];
+  inventory.forEach(item=>{
+    if(item.hasSizes){
+      (item.variants||[]).forEach((v,idx)=>{
+        if(item.name.toLowerCase().includes(q) || (v.size&&v.size.toLowerCase().includes(q)) || (v.barcode&&v.barcode.includes(q))){
+          results.push({item, variantIdx:idx, label: item.name+' ('+v.size+') — currently '+v.qty+' '+item.unit});
+        }
+      });
+    } else if(item.name.toLowerCase().includes(q) || (item.barcode&&item.barcode.includes(q))){
+      results.push({item, variantIdx:null, label: item.name+' — currently '+item.qty+' '+item.unit});
+    }
+  });
+  window._orderSearchResults = results;
+  if(results.length===0){
+    box.innerHTML = '<div style="padding:10px 12px;color:var(--ink-soft);font-size:13.5px;">No matching products — add it as new below</div>';
+    box.style.display='block';
+    return;
+  }
+  box.innerHTML = results.slice(0,8).map((r,i)=>`<div style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;" onmousedown="pickOrderQuickSearch(${i})">${escapeHtml(r.label)}</div>`).join('');
+  box.style.display='block';
+}
+function pickOrderQuickSearch(i){
+  const r = window._orderSearchResults ? window._orderSearchResults[i] : null;
+  if(!r) return;
+  addItemToOrderByMatch(r.item, r.variantIdx);
+  const input = document.getElementById('orderQuickSearch');
+  if(input) input.value = '';
+  const box = document.getElementById('orderQuickSearchResults');
+  if(box){ box.style.display='none'; box.innerHTML=''; }
+}
+function updateOrderLineField(idx, field, val){
+  currentOrderLines[idx][field] = parseFloat(val)||0;
+  renderOrderTotals();
+}
+function removeOrderLine(idx){
+  currentOrderLines.splice(idx,1);
+  renderOrderLines();
+}
+function renderOrderLines(){
+  const wrap = document.getElementById('orderLines');
+  if(!wrap) return;
+  if(currentOrderLines.length===0){
+    wrap.innerHTML = '<div class="helper" style="margin-bottom:10px;">No items added yet. Search, scan, or add a new product above.</div>';
+    renderOrderTotals();
+    return;
+  }
+  wrap.innerHTML = `
+    <div style="display:grid;grid-template-columns:1.6fr 0.8fr 0.9fr 0.9fr 34px;gap:8px;border-bottom:2px solid var(--border);font-size:11px;text-transform:uppercase;color:var(--ink-soft);font-weight:700;padding-bottom:6px;margin-bottom:6px;">
+      <div>Product</div><div>Qty Arrived</div><div>Cost/Unit</div><div>Line Total</div><div></div>
+    </div>
+    ${currentOrderLines.map((l,idx)=>`
+      <div style="display:grid;grid-template-columns:1.6fr 0.8fr 0.9fr 0.9fr 34px;gap:8px;align-items:center;margin-bottom:8px;">
+        <div>${escapeHtml(l.name)}${l.size?' ('+escapeHtml(l.size)+')':''}${l.isNew?' <span class="pill due">new</span>':''}</div>
+        <div><input type="number" min="0.01" step="0.01" value="${l.qty}" oninput="updateOrderLineField(${idx},'qty',this.value)"></div>
+        <div><input type="number" min="0" step="0.01" value="${l.costPrice}" oninput="updateOrderLineField(${idx},'costPrice',this.value)"></div>
+        <div>${money(round2(l.qty*l.costPrice))}</div>
+        <div><button class="btn btn-danger btn-sm" onclick="removeOrderLine(${idx})">✕</button></div>
+      </div>
+    `).join('')}
+  `;
+  renderOrderTotals();
+}
+function renderOrderTotals(){
+  const el = document.getElementById('orderTotalCost');
+  if(!el) return;
+  const total = currentOrderLines.reduce((s,l)=> s + round2(l.qty*l.costPrice), 0);
+  const units = currentOrderLines.reduce((s,l)=> s + l.qty, 0);
+  el.textContent = `${units} unit(s) — Total cost: ${money(total)}`;
+}
+async function submitOrder(){
+  if(currentOrderLines.length===0){ showToast('⚠ Add at least one item first'); return; }
+  const reference = document.getElementById('order_reference').value.trim();
+  const notes = document.getElementById('order_notes').value.trim();
+
+  const recordItems = [];
+  for(const line of currentOrderLines){
+    if(line.qty<=0) continue;
+    let itemId = line.itemId;
+    if(line.isNew){
+      const newItem = {
+        id: uid(), name: line.name, category: 'General', unit: 'pcs', hasSizes:false,
+        qty: line.qty, costPrice: line.costPrice, sellPrice: 0, lowStock: settings.lowStockDefault, barcode: ''
+      };
+      inventory.push(newItem);
+      itemId = newItem.id;
+    } else {
+      const item = inventory.find(i=>i.id===line.itemId);
+      if(!item) continue;
+      if(line.variantIdx!=null && item.hasSizes){
+        const v = item.variants[line.variantIdx];
+        v.qty = round2(Number(v.qty) + line.qty);
+        v.costPrice = line.costPrice;
+      } else {
+        item.qty = round2(Number(item.qty) + line.qty);
+        item.costPrice = line.costPrice;
+      }
+    }
+    recordItems.push({itemId, variantIdx: line.variantIdx, name: line.name, size: line.size, unit: line.unit, qty: line.qty, costPrice: line.costPrice});
+  }
+
+  if(recordItems.length===0){ showToast('⚠ Nothing valid to save'); return; }
+
+  const totalCost = recordItems.reduce((s,l)=> s + round2(l.qty*l.costPrice), 0);
+  const record = { id: uid(), date: new Date().toISOString(), reference, notes, items: recordItems, totalCost };
+  orders.push(record);
+  await saveKey('orders', orders);
+  await saveKey('inventory', inventory);
+  closeOrderForm();
+  showToast('✓ Order list saved — stock updated');
+  render('orders');
+}
+function renderOrdersList(){
+  const el = document.getElementById('ordersList');
+  if(!el) return;
+  if(orders.length===0){
+    el.innerHTML = `<div class="empty-state"><h3>No order lists yet</h3><p>Truck deliveries you log will show up here, along with the stock each one added.</p></div>`;
+    return;
+  }
+  const sorted = [...orders].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th>Reference</th><th>Items</th><th>Units</th><th>Total Cost</th><th></th></tr></thead>
+      <tbody>
+        ${sorted.map(o=>{
+          const units = o.items.reduce((s,i)=>s+i.qty,0);
+          return `
+          <tr>
+            <td>${new Date(o.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</td>
+            <td>${escapeHtml(o.reference||'—')}</td>
+            <td>${o.items.map(i=>escapeHtml(i.name)+(i.size?' ('+escapeHtml(i.size)+')':'')+' x'+i.qty).join(', ')}</td>
+            <td>${units}</td>
+            <td>${money(o.totalCost)}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="deleteOrderRecord('${o.id}')">Delete</button></td>
+          </tr>
+        `;}).join('')}
+      </tbody>
+    </table>
+  `;
+}
+async function deleteOrderRecord(id){
+  if(!confirm('Delete this order list record? This will NOT reverse the stock it added — adjust stock manually in Inventory if needed.')) return;
+  orders = orders.filter(o=>o.id!==id);
+  await saveKey('orders', orders);
+  showToast('Deleted');
+  render('orders');
+}
+
+/* ================= EXCEL IMPORT / EXPORT ================= */
+/* Brand palette lifted straight from this app's own CSS, so the spreadsheet
+   looks like it belongs to the same product rather than a generic dump. */
+const XL_COLOR = {
+  inkDark:  'FF2B2016',
+  brass:    'FFB08D57',
+  cream:    'FFFBF7F0',
+  border:   'FFE2D5C1',
+  white:    'FFFFFFFF',
+  lowStock: 'FFF6D5D5',
+  lowText:  'FF8B2020',
+  example:  'FFFFF7E0'
+};
+const XL_CATEGORY_LIST = ['Mattress','Sofa Raw Material','Pillow','Blanket','Fabric','Foam','Other'];
+const XL_UNIT_LIST = ['pcs','meter','kg','roll','box','sheet','yard'];
+const XL_COLS = [
+  {header:'Product Name',           key:'name',     width:30},
+  {header:'Category',               key:'category', width:18},
+  {header:'Unit',                   key:'unit',     width:10},
+  {header:'Quantity',               key:'qty',      width:11},
+  {header:'Cost Price',             key:'cost',     width:14},
+  {header:'Sell Price',             key:'sell',     width:14},
+  {header:'Size',                   key:'size',     width:16},
+  {header:'Low Stock Alert Below',  key:'low',      width:16},
+  {header:'Barcode (optional)',     key:'barcode',  width:18}
+];
+
+function xlDownloadBuffer(buffer, filename){
+  const blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function xlStyleTitleRow(ws, rowNum, text, numCols){
+  ws.mergeCells(rowNum, 1, rowNum, numCols);
+  const cell = ws.getCell(rowNum, 1);
+  cell.value = text;
+  cell.font = {bold:true, size:15, color:{argb:XL_COLOR.white}};
+  cell.alignment = {vertical:'middle', horizontal:'left', indent:1};
+  cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:XL_COLOR.inkDark}};
+  ws.getRow(rowNum).height = 28;
+}
+function xlStyleSubtitleRow(ws, rowNum, text, numCols){
+  ws.mergeCells(rowNum, 1, rowNum, numCols);
+  const cell = ws.getCell(rowNum, 1);
+  cell.value = text;
+  cell.font = {italic:true, size:10.5, color:{argb:'FF6B5D4D'}};
+  cell.alignment = {vertical:'middle', horizontal:'left', indent:1, wrapText:true};
+  cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:XL_COLOR.cream}};
+  ws.getRow(rowNum).height = 32;
+}
+function xlStyleHeaderRow(ws, rowNum, numCols){
+  for(let c=1;c<=numCols;c++){
+    const cell = ws.getCell(rowNum, c);
+    cell.font = {bold:true, size:11, color:{argb:XL_COLOR.white}};
+    cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:XL_COLOR.brass}};
+    cell.alignment = {vertical:'middle', horizontal:'center', wrapText:true};
+    cell.border = {
+      top:{style:'thin', color:{argb:XL_COLOR.inkDark}}, bottom:{style:'thin', color:{argb:XL_COLOR.inkDark}},
+      left:{style:'thin', color:{argb:XL_COLOR.inkDark}}, right:{style:'thin', color:{argb:XL_COLOR.inkDark}}
+    };
+  }
+  ws.getRow(rowNum).height = 34;
+}
+function xlStyleDataRow(ws, rowNum, numCols, zebra){
+  for(let c=1;c<=numCols;c++){
+    const cell = ws.getCell(rowNum, c);
+    cell.border = {
+      top:{style:'thin', color:{argb:XL_COLOR.border}}, bottom:{style:'thin', color:{argb:XL_COLOR.border}},
+      left:{style:'thin', color:{argb:XL_COLOR.border}}, right:{style:'thin', color:{argb:XL_COLOR.border}}
+    };
+    if(zebra) cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:XL_COLOR.cream}};
+  }
+}
+function xlAddDropdown(ws, colIdx, fromRow, toRow, list){
+  for(let r=fromRow;r<=toRow;r++){
+    ws.getCell(r, colIdx).dataValidation = {
+      type:'list', allowBlank:true, formulae:[`"${list.join(',')}"`],
+      showErrorMessage:true, errorTitle:'Not in list', error:'Pick one from the dropdown, or type your own — this is just a suggestion list.'
+    };
+  }
+}
+
+async function downloadStockTemplate(){
+  if(typeof ExcelJS === 'undefined'){ showToast('⚠ The spreadsheet library failed to load. Check your internet connection and try again.'); return; }
+  const wb = new ExcelJS.Workbook();
+  wb.creator = settings.shopName || 'Workshop Ledger';
+  wb.created = new Date();
+  wb.title = 'Stock Import Template';
+  wb.subject = 'Inventory Import';
+
+  const ws = wb.addWorksheet('Stock Import', {views:[{state:'frozen', ySplit:4}]});
+  const numCols = XL_COLS.length;
+  ws.columns = XL_COLS.map(c=>({width:c.width}));
+
+  xlStyleTitleRow(ws, 1, `📋 ${settings.shopName || 'Workshop Ledger'} — STOCK IMPORT TEMPLATE`, numCols);
+  xlStyleSubtitleRow(ws, 2, 'Fill in one row per product. For an item with more than one size (like a mattress), add extra rows below it and leave Product Name and Category blank on those rows — see the example below. Unit, Low Stock Alert, and Barcode are optional; leave them blank if you don\'t need them.', numCols);
+  ws.getRow(3).height = 6;
+
+  ws.getRow(4).values = XL_COLS.map(c=>c.header);
+  xlStyleHeaderRow(ws, 4, numCols);
+  ws.autoFilter = {from:{row:4, column:1}, to:{row:4, column:numCols}};
+
+  const exampleRows = [
+    ['MOLTY FOAM', 'Mattress', 'pcs', 2, 15000, 20000, '78x72x5', 5, ''],
+    ['', '', 'pcs', 3, 20000, 22000, '78x72x6', 5, ''],
+    ['Sofa Fabric - Blue', 'Fabric', 'meter', 50, 200, 350, '', 10, '']
+  ];
+  exampleRows.forEach((rowVals, i)=>{
+    const rowNum = 5 + i;
+    ws.getRow(rowNum).values = rowVals;
+    xlStyleDataRow(ws, rowNum, numCols, false);
+    for(let c=1;c<=numCols;c++){ ws.getCell(rowNum, c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:XL_COLOR.example}}; }
+    ws.getCell(rowNum, 5).numFmt = '"Rs"#,##0';
+    ws.getCell(rowNum, 6).numFmt = '"Rs"#,##0';
+  });
+  ws.getCell(5, 1).note = 'These 3 rows are examples — edit them with your real products, or delete them entirely before importing.';
+
+  const lastRow = 5 + exampleRows.length + 300;
+  for(let r=5+exampleRows.length; r<=lastRow; r++){
+    xlStyleDataRow(ws, r, numCols, (r-4)%2===0);
+    ws.getCell(r, 5).numFmt = '"Rs"#,##0';
+    ws.getCell(r, 6).numFmt = '"Rs"#,##0';
+  }
+  xlAddDropdown(ws, 2, 5, lastRow, XL_CATEGORY_LIST);
+  xlAddDropdown(ws, 3, 5, lastRow, XL_UNIT_LIST);
+
+  const info = wb.addWorksheet('Instructions');
+  info.columns = [{width:3},{width:90}];
+  const infoLines = [
+    [null, null],
+    [null, 'HOW TO FILL IN THIS TEMPLATE'],
+    [null, ''],
+    [null, 'Adding a simple product'],
+    [null, '• One row per product: Product Name, Category, Unit, Quantity, Cost Price, Sell Price.'],
+    [null, '• Leave Size blank — Size is only for products that come in multiple sizes.'],
+    [null, ''],
+    [null, 'Adding a product with multiple sizes (e.g. mattresses)'],
+    [null, '• First row: fill in Product Name, Category, and the first size\'s details.'],
+    [null, '• Next row(s): leave Product Name and Category BLANK, fill in the next size\'s Quantity/Cost/Sell/Size.'],
+    [null, '• The app treats consecutive blank-name rows as more sizes of the product above them.'],
+    [null, ''],
+    [null, 'Optional columns'],
+    [null, '• Unit — defaults to "pcs" if left blank.'],
+    [null, '• Low Stock Alert Below — defaults to this shop\'s standard low-stock setting if left blank.'],
+    [null, '• Barcode — leave blank if the product doesn\'t have one yet; you can scan/generate one later in Inventory.'],
+    [null, ''],
+    [null, 'Importing this file'],
+    [null, '• Go to the Inventory tab → "Import Stock from Excel" → choose this file.'],
+    [null, '• You\'ll see a preview of everything found before anything is added — nothing changes until you confirm.'],
+    [null, ''],
+    [null, '⚠ Importing ADDS new products. If a product with the exact same name is already in your stock list, importing again will create a duplicate rather than merging quantities.']
+  ];
+  infoLines.forEach((line, i)=>{ info.getRow(i+1).values = line; });
+  info.getCell(2,2).font = {bold:true, size:14, color:{argb:XL_COLOR.inkDark}};
+  [4,8,13,18].forEach(r=>{ info.getCell(r,2).font = {bold:true, size:11.5, color:{argb:XL_COLOR.brass}}; });
+  info.getCell(22,2).font = {bold:true, italic:true, color:{argb:XL_COLOR.lowText}};
+  info.getCell(22,2).fill = {type:'pattern', pattern:'solid', fgColor:{argb:XL_COLOR.lowStock}};
+  info.getCell(22,2).alignment = {wrapText:true, vertical:'middle'};
+  info.getRow(22).height = 32;
+
+  const buffer = await wb.xlsx.writeBuffer();
+  xlDownloadBuffer(buffer, 'stock-import-template.xlsx');
+}
+
+async function exportStockExcel(){
+  if(typeof ExcelJS === 'undefined'){ showToast('⚠ The spreadsheet library failed to load. Check your internet connection and try again.'); return; }
+  const wb = new ExcelJS.Workbook();
+  wb.creator = settings.shopName || 'Workshop Ledger';
+  wb.created = new Date();
+  wb.title = 'Stock List Export';
+  wb.subject = 'Inventory';
+
+  const numCols = XL_COLS.length + 1; // + Total Value formula column
+  const cols = XL_COLS.concat([{header:'Total Value', key:'value', width:16}]);
+
+  const ws = wb.addWorksheet('Stock List', {views:[{state:'frozen', ySplit:4}]});
+  ws.columns = cols.map(c=>({width:c.width}));
+
+  const dateStr = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  xlStyleTitleRow(ws, 1, `📦 ${settings.shopName || 'Workshop Ledger'} — STOCK LIST (as of ${dateStr})`, numCols);
+  xlStyleSubtitleRow(ws, 2, 'This is a live snapshot of everything in your stock list. "Total Value" is a formula (Quantity × Cost Price) — it will recalculate automatically if you edit numbers in Excel. Rows shown in red have quantity at or below their low-stock alert level.', numCols);
+  ws.getRow(3).height = 6;
+
+  ws.getRow(4).values = cols.map(c=>c.header);
+  xlStyleHeaderRow(ws, 4, numCols);
+  ws.autoFilter = {from:{row:4, column:1}, to:{row:4, column:numCols}};
+
+  let r = 5;
+  const categoriesSeen = new Set();
+  const sortedInventory = [...inventory].sort((a,b)=>{
+    const catA = (a.category || 'General').toLowerCase();
+    const catB = (b.category || 'General').toLowerCase();
+    if(catA !== catB) return catA.localeCompare(catB);
+    return String(a.name||'').toLowerCase().localeCompare(String(b.name||'').toLowerCase());
+  });
+  let lastCategory = null;
+  sortedInventory.forEach(item=>{
+    const cat = item.category || 'General';
+    categoriesSeen.add(cat);
+    const isNewGroup = cat !== lastCategory;
+    const firstRowOfItem = r;
+    if(item.hasSizes){
+      (item.variants||[]).forEach((v, idx)=>{
+        ws.getRow(r).values = [
+          idx===0 ? item.name : '', idx===0 ? cat : '', item.unit,
+          v.qty, v.costPrice, v.sellPrice, v.size, v.lowStock, v.barcode||'', {formula:`D${r}*E${r}`}
+        ];
+        xlStyleDataRow(ws, r, numCols, (r-4)%2===0);
+        ws.getCell(r,5).numFmt = '"Rs"#,##0'; ws.getCell(r,6).numFmt = '"Rs"#,##0'; ws.getCell(r,10).numFmt = '"Rs"#,##0';
+        r++;
+      });
+    } else {
+      ws.getRow(r).values = [
+        item.name, cat, item.unit, item.qty, item.costPrice, item.sellPrice, '', item.lowStock, item.barcode||'', {formula:`D${r}*E${r}`}
+      ];
+      xlStyleDataRow(ws, r, numCols, (r-4)%2===0);
+      ws.getCell(r,5).numFmt = '"Rs"#,##0'; ws.getCell(r,6).numFmt = '"Rs"#,##0'; ws.getCell(r,10).numFmt = '"Rs"#,##0';
+      r++;
+    }
+    if(isNewGroup && firstRowOfItem > 5){
+      for(let c=1;c<=numCols;c++){
+        const cell = ws.getCell(firstRowOfItem, c);
+        cell.border = {...cell.border, top:{style:'medium', color:{argb:XL_COLOR.brass}}};
+      }
+    }
+    lastCategory = cat;
+  });
+  const lastDataRow = r - 1;
+
+  if(lastDataRow >= 5){
+    ws.addConditionalFormatting({
+      ref: `D5:D${lastDataRow}`,
+      rules: [{
+        type:'expression', formulae:[`D5<=H5`], priority:1,
+        style:{fill:{type:'pattern', pattern:'solid', bgColor:{argb:XL_COLOR.lowStock}}, font:{color:{argb:XL_COLOR.lowText}, bold:true}}
+      }]
+    });
+  }
+
+  const totalRow = lastDataRow + 1;
+  if(lastDataRow >= 5){
+    ws.mergeCells(totalRow, 1, totalRow, 3);
+    ws.getCell(totalRow, 1).value = 'TOTAL';
+    ws.getCell(totalRow, 1).font = {bold:true, size:12, color:{argb:XL_COLOR.inkDark}};
+    ws.getCell(totalRow, 4).value = {formula:`SUM(D5:D${lastDataRow})`};
+    ws.getCell(totalRow, 10).value = {formula:`SUM(J5:J${lastDataRow})`};
+    ws.getCell(totalRow, 10).numFmt = '"Rs"#,##0';
+    for(let c=1;c<=numCols;c++){
+      const cell = ws.getCell(totalRow, c);
+      cell.font = cell.font || {bold:true};
+      cell.font = {...cell.font, bold:true};
+      cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:XL_COLOR.cream}};
+      cell.border = {top:{style:'double', color:{argb:XL_COLOR.inkDark}}, bottom:{style:'thin', color:{argb:XL_COLOR.border}}, left:{style:'thin', color:{argb:XL_COLOR.border}}, right:{style:'thin', color:{argb:XL_COLOR.border}}};
+    }
+  }
+
+  // Summary sheet — category subtotals via live formulas against the Stock List sheet
+  const summary = wb.addWorksheet('Summary');
+  summary.columns = [{width:24},{width:16},{width:18}];
+  xlStyleTitleRow(summary, 1, `📊 ${settings.shopName || 'Workshop Ledger'} — SUMMARY`, 3);
+  summary.getRow(2).values = ['Category', 'Total Quantity', 'Total Value'];
+  xlStyleHeaderRow(summary, 2, 3);
+  let sr = 3;
+  const cats = Array.from(categoriesSeen).sort();
+  cats.forEach(cat=>{
+    summary.getRow(sr).values = [
+      cat,
+      {formula:`SUMIF('Stock List'!B5:B${lastDataRow},A${sr},'Stock List'!D5:D${lastDataRow})`},
+      {formula:`SUMIF('Stock List'!B5:B${lastDataRow},A${sr},'Stock List'!J5:J${lastDataRow})`}
+    ];
+    xlStyleDataRow(summary, sr, 3, (sr%2===0));
+    summary.getCell(sr,3).numFmt = '"Rs"#,##0';
+    sr++;
+  });
+  summary.getRow(sr).values = ['GRAND TOTAL', {formula:`SUM(B3:B${sr-1})`}, {formula:`SUM(C3:C${sr-1})`}];
+  for(let c=1;c<=3;c++){
+    const cell = summary.getCell(sr, c);
+    cell.font = {bold:true, color:{argb:XL_COLOR.inkDark}};
+    cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:XL_COLOR.cream}};
+    cell.border = {top:{style:'double', color:{argb:XL_COLOR.inkDark}}};
+  }
+  summary.getCell(sr,3).numFmt = '"Rs"#,##0';
+
+  const buffer = await wb.xlsx.writeBuffer();
+  xlDownloadBuffer(buffer, `stock-list-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function findExcelCol(headerRow, aliases){
+  for(let i=0;i<headerRow.length;i++){
+    const h = String(headerRow[i]||'').trim().toLowerCase();
+    if(!h) continue;
+    if(aliases.some(a=>h.includes(a))) return i;
+  }
+  return -1;
+}
+
+let pendingImportItems = null;
+
+function handleStockImportFile(file){
+  if(!file) return;
+  if(typeof XLSX === 'undefined'){ showToast('⚠ The Excel reader library failed to load. Check your internet connection and try again.'); return; }
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+      if(rows.length < 2){ showToast('⚠ That file has no data rows'); return; }
+      const header = rows[0];
+      const col = {
+        name: findExcelCol(header, ['product name','name']),
+        category: findExcelCol(header, ['category']),
+        qty: findExcelCol(header, ['quantity','qty']),
+        cost: findExcelCol(header, ['cost price','cost']),
+        sell: findExcelCol(header, ['sell price','sale price','sell']),
+        size: findExcelCol(header, ['size']),
+        barcode: findExcelCol(header, ['barcode']),
+        unit: findExcelCol(header, ['unit']),
+        low: findExcelCol(header, ['low stock','reorder'])
+      };
+      if(col.name===-1 || col.qty===-1 || col.cost===-1 || col.sell===-1){
+        showToast('⚠ Could not find the Product name / quantity / cost price / sell price columns — use the template.');
+        return;
+      }
+      const blocks = [];
+      let current = null;
+      for(let r=1;r<rows.length;r++){
+        const row = rows[r];
+        if(row.every(c=>String(c).trim()==='')) continue;
+        const nameVal = col.name>-1 ? String(row[col.name]||'').trim() : '';
+        const rowData = {
+          qty: col.qty>-1 ? parseFloat(row[col.qty])||0 : 0,
+          cost: col.cost>-1 ? parseFloat(row[col.cost])||0 : 0,
+          sell: col.sell>-1 ? parseFloat(row[col.sell])||0 : 0,
+          size: col.size>-1 ? String(row[col.size]||'').trim() : '',
+          barcode: col.barcode>-1 ? String(row[col.barcode]||'').trim() : '',
+          low: col.low>-1 && row[col.low]!=='' ? parseFloat(row[col.low]) : null
+        };
+        if(nameVal){
+          current = {
+            name: nameVal,
+            category: col.category>-1 ? String(row[col.category]||'').trim() : '',
+            unit: col.unit>-1 ? (String(row[col.unit]||'').trim()||'pcs') : 'pcs',
+            rows: [rowData]
+          };
+          blocks.push(current);
+        } else if(current){
+          current.rows.push(rowData);
+        }
+      }
+      if(blocks.length===0){ showToast('⚠ No products found in that file'); return; }
+      const parsedItems = blocks.map(b=>{
+        const anySize = b.rows.some(r=>r.size);
+        if(anySize){
+          return {
+            name: b.name, category: b.category||'General', unit: b.unit, hasSizes:true,
+            lowStock: (b.rows[0].low!=null ? b.rows[0].low : settings.lowStockDefault),
+            variants: b.rows.map(r=>({size:r.size||'-', qty:r.qty, costPrice:r.cost, sellPrice:r.sell, lowStock:(r.low!=null?r.low:settings.lowStockDefault), barcode:r.barcode}))
+          };
+        } else {
+          const r = b.rows[0];
+          return {
+            name: b.name, category: b.category||'General', unit: b.unit, hasSizes:false,
+            qty:r.qty, costPrice:r.cost, sellPrice:r.sell, lowStock:(r.low!=null?r.low:settings.lowStockDefault), barcode:r.barcode
+          };
+        }
+      });
+      pendingImportItems = parsedItems;
+      renderImportPreview(parsedItems);
+    }catch(err){
+      showToast('⚠ Could not read that file. Make sure it is a valid Excel/CSV file.');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderImportPreview(items){
+  const wrap = document.getElementById('importPreviewWrap');
+  if(!wrap) return;
+  const totalUnits = items.reduce((s,i)=> s + (i.hasSizes ? i.variants.reduce((s2,v)=>s2+v.qty,0) : i.qty), 0);
+  wrap.innerHTML = `
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;">
+      <div class="panel-header" style="margin-bottom:10px;">
+        <h3 style="font-size:16px;">Review Before Importing</h3>
+        <button class="modal-close" onclick="cancelImport()">✕</button>
+      </div>
+      <p class="helper" style="margin-bottom:10px;">Found <strong>${items.length}</strong> product(s), <strong>${totalUnits}</strong> total units. This <strong>adds</strong> these as new items — if a product with the same name is already in your stock, importing again will create a duplicate rather than merging quantities. Review the list below, then confirm.</p>
+      <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;">
+        <table>
+          <thead><tr><th>Product</th><th>Category</th><th>Size(s) / Qty</th><th>Cost</th><th>Sell</th></tr></thead>
+          <tbody>
+            ${items.map(i=>`
+              <tr>
+                <td>${escapeHtml(i.name)}</td>
+                <td>${escapeHtml(i.category)}</td>
+                <td>${i.hasSizes ? i.variants.map(v=>`${escapeHtml(v.size)}: ${v.qty}`).join(', ') : i.qty}</td>
+                <td>${i.hasSizes ? money(i.variants[0].costPrice)+' (1st size)' : money(i.costPrice)}</td>
+                <td>${i.hasSizes ? money(i.variants[0].sellPrice)+' (1st size)' : money(i.sellPrice)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="confirmImport()">✓ Import These ${items.length} Products</button>
+        <button class="btn btn-outline" onclick="cancelImport()">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+function cancelImport(){
+  pendingImportItems = null;
+  const wrap = document.getElementById('importPreviewWrap');
+  if(wrap) wrap.innerHTML = '';
+}
+async function confirmImport(){
+  if(!pendingImportItems || pendingImportItems.length===0) return;
+  pendingImportItems.forEach(i=>{ i.id = uid(); });
+  inventory = inventory.concat(pendingImportItems);
+  await saveKey('inventory', inventory);
+  showToast(`✓ Imported ${pendingImportItems.length} products`);
+  cancelImport();
+  render('inventory');
+}
+
 /* ================= SETTINGS ================= */
 function renderSettings(){
   const app = document.getElementById('app');
@@ -2173,6 +2944,15 @@ function renderSettings(){
         <div class="field"><label>Remind every (days)</label><input type="number" id="s_reminderdays" value="${settings.reminderIntervalDays}" min="1" step="1"></div>
       </div>
       <button class="btn btn-primary" onclick="saveSettingsForm()">Save Settings</button>
+
+      <hr class="stitch" style="margin:26px 0;">
+      <h3 style="font-size:16px;margin-bottom:6px;">Bluetooth Receipt Printer Setup (one-time, on the tablet)</h3>
+      <p class="helper" style="margin-bottom:6px;">A website can never print completely silently — that's a browser security rule on every phone, tablet, and PC, not something this app can bypass. What we've done instead: the "🖨 Print Receipt" button already formats everything correctly for your 80mm paper, so all that's left is one tap to confirm in the system print box that pops up — and if you do the setup below once, that box will already have your printer selected.</p>
+      <p class="helper" style="margin-bottom:6px;"><strong>1. Install "RawBT" from the Play Store</strong> (free) — it's the bridge that lets Chrome print to Bluetooth receipt printers, since these printers don't understand normal printing on their own.</p>
+      <p class="helper" style="margin-bottom:6px;"><strong>2. Pair your printer</strong> the normal way first, in the tablet's Bluetooth settings, if you haven't already.</p>
+      <p class="helper" style="margin-bottom:6px;"><strong>3. Open RawBT once</strong> and select your printer from its list, set paper width to 80mm.</p>
+      <p class="helper" style="margin-bottom:6px;"><strong>4. Tap "🖨 Print Receipt" in this app.</strong> When the system print screen appears, choose "RawBT" as the printer, then tap the print icon. On most Android versions, it'll remember RawBT as your choice after the first time, so future taps need only that one confirmation.</p>
+      <p class="helper" style="margin-bottom:12px;">If the printout looks too small, too large, or cut off, adjust the paper width setting inside RawBT (not in this app) — it controls how the receipt gets scaled to your specific printer.</p>
 
       <hr class="stitch" style="margin:26px 0;">
       <h3 style="font-size:16px;margin-bottom:6px;">App Lock</h3>
@@ -2226,8 +3006,8 @@ function downloadBackup(){
   const payload = {
     exportedAt: new Date().toISOString(),
     app: 'Workshop Ledger',
-    version: 2,
-    settings, inventory, bills, returns
+    version: 3,
+    settings, inventory, bills, returns, orders
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -2255,6 +3035,7 @@ function restoreBackup(file){
       inventory = data.inventory;
       bills = data.bills;
       returns = data.returns || [];
+      orders = data.orders || [];
       bills.forEach(b=>{
         if(!b.payment){ b.payment = {status:'paid', method:'cash', amountPaid:b.total, amountDue:0, payments:[{date:b.date, amount:b.total, method:'cash'}], lastReminded:null}; }
       });
@@ -2262,6 +3043,7 @@ function restoreBackup(file){
       saveKey('inventory', inventory);
       saveKey('bills', bills);
       saveKey('returns', returns);
+      saveKey('orders', orders);
       showToast('✓ Backup restored');
       render('dashboard');
     }catch(err){
@@ -2283,15 +3065,17 @@ async function saveSettingsForm(){
   render('settings');
 }
 async function resetAllData(){
-  if(!confirm('This will permanently delete ALL inventory, bills, and return/warranty records — on EVERY device connected to this shop, not just this one. Are you sure?')) return;
+  if(!confirm('This will permanently delete ALL inventory, bills, return/warranty records, and order lists — on EVERY device connected to this shop, not just this one. Are you sure?')) return;
   if(!confirm('Really sure? This cannot be undone.')) return;
   inventory = [];
   bills = [];
   returns = [];
+  orders = [];
   settings = {...DEFAULT_SETTINGS};
   await saveKey('inventory', inventory);
   await saveKey('bills', bills);
   await saveKey('returns', returns);
+  await saveKey('orders', orders);
   await saveKey('settings', settings);
   showToast('All data erased');
   render('dashboard');
