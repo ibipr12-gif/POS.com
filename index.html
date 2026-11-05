@@ -3147,5 +3147,305 @@ async function saveAccessCode(){
   setTimeout(markSettingsConfirmed, 5000); // offline fallback: stop waiting after 5s
 })();
 </script>
+  <script>
+/* ---------- styles ---------- */
+(function(){
+  const s=document.createElement('style');
+  s.textContent=`
+  .thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;border:1px solid var(--border);cursor:pointer;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .cell-in{width:96px;padding:7px 8px;font-size:14px}
+  .cell-in.qty{width:76px}
+  .quickadd{background:var(--surface-2);border:1.5px dashed var(--brass);border-radius:10px;padding:14px;margin-bottom:14px}
+  .qa-grid{display:grid;grid-template-columns:2fr 1.3fr .7fr .7fr .8fr .8fr auto auto;gap:8px;align-items:end}
+  @media(max-width:900px){.qa-grid{grid-template-columns:1fr 1fr}}
+  tr.vrow td{background:var(--surface-2);font-size:13.5px;color:var(--ink-soft)}
+  tr.vrow.low td{background:var(--danger-bg);color:var(--ink)}
+  tr.vrow.low td:first-child{border-left:3px solid var(--danger)}
+  #lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:400;align-items:center;justify-content:center}
+  #lightbox img{max-width:92vw;max-height:80vh;border-radius:8px}`;
+  document.head.appendChild(s);
+})();
+
+/* Photos live in the cloud only; keep the browser cache small so it never overflows */
+(function(){
+  const orig=Storage.prototype.setItem;
+  Storage.prototype.setItem=function(k,v){
+    if(k===STORAGE_PREFIX+'inventory'){
+      try{ v=JSON.stringify(JSON.parse(v).map(i=>{const r={...i};delete r.image;return r;})); orig.call(this,k,v); }
+      catch(e){ /* this cache is optional: the cloud is the source of truth */ }
+      return;
+    }
+    return orig.call(this,k,v);
+  };
+})();
+
+/* ---------- photo helpers ---------- */
+function ux_compress(file,cb){
+  const r=new FileReader();
+  r.onload=e=>{const img=new Image();
+    img.onload=()=>{const M=480,sc=Math.min(1,M/Math.max(img.width,img.height));
+      const c=document.createElement('canvas');c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);cb(c.toDataURL('image/jpeg',0.7));};
+    img.onerror=()=>showToast('⚠ Could not read that image');img.src=e.target.result;};
+  r.readAsDataURL(file);
+}
+function ux_pickImage(cb){
+  const i=document.createElement('input');i.type='file';i.accept='image/*';
+  i.onchange=()=>{if(i.files[0])ux_compress(i.files[0],cb);};i.click();
+}
+async function setItemImage(id){
+  ux_pickImage(async d=>{
+    const it=inventory.find(x=>x.id===id);if(!it)return;
+    it.image=d;ux_removedImg.delete(id);await saveKey('inventory',inventory);showToast('✓ Photo saved');renderInventoryList();
+  });
+}
+const ux_lb=document.createElement('div');ux_lb.id='lightbox';
+ux_lb.innerHTML='<div style="text-align:center"><img id="lbImg"><div style="margin-top:12px"><button class="btn btn-brass btn-sm" id="lbChange">📷 Change photo</button> <button class="btn btn-sm" style="background:#fff;color:#B3452C" id="lbRemove">Remove photo</button></div></div>';
+document.body.appendChild(ux_lb);
+ux_lb.onclick=e=>{if(e.target===ux_lb||e.target.id==='lbImg')ux_lb.style.display='none';};
+function showImage(id){
+  const it=inventory.find(x=>x.id===id);if(!it||!it.image)return;
+  document.getElementById('lbImg').src=it.image;
+  document.getElementById('lbChange').onclick=()=>{ux_lb.style.display='none';setItemImage(id);};
+  document.getElementById('lbRemove').onclick=async()=>{
+    const t=inventory.find(x=>x.id===id);if(t)delete t.image;ux_removedImg.add(id);
+    ux_lb.style.display='none';await saveKey('inventory',inventory);renderInventoryList();};
+  ux_lb.style.display='flex';
+}
+
+/* ---------- inventory screen ---------- */
+let ux_search='', ux_lastCat='', ux_lastUnit='pcs', ux_qaImage=null;
+
+function renderInventory(){
+  const cats=[...new Set(CATEGORY_SUGGESTIONS.concat(inventory.map(i=>i.category)))];
+  document.getElementById('app').innerHTML=`
+  <div class="panel">
+    <div class="panel-header"><h2>Inventory</h2>
+      <button class="btn btn-outline btn-sm" onclick="openItemForm()">+ Full form (sizes / barcode)</button></div>
+
+    <div class="quickadd">
+      <div style="font-weight:700;margin-bottom:8px;">⚡ Quick Add — fill in, press Enter, type the next one</div>
+      <div class="qa-grid" onkeydown="if(event.key==='Enter'&&event.target.tagName==='INPUT'){event.preventDefault();ux_quickAdd();}">
+        <div><label>Name</label><input type="text" id="qa_name" placeholder="e.g. Shoe rack 4-tier" autocomplete="off"></div>
+        <div><label>Category</label><input type="text" id="qa_cat" list="qaCats" value="${escapeHtml(ux_lastCat)}"></div>
+        <div><label>Unit</label><input type="text" id="qa_unit" list="qaUnits" value="${escapeHtml(ux_lastUnit)}"></div>
+        <div><label>Qty</label><input type="number" id="qa_qty" min="0" step="0.01" placeholder="0"></div>
+        <div><label>Cost</label><input type="number" id="qa_cost" min="0" step="0.01" placeholder="0"></div>
+        <div><label>Sell</label><input type="number" id="qa_sell" min="0" step="0.01" placeholder="0"></div>
+        <button class="btn btn-outline" id="qa_photoBtn" onclick="ux_qaPhoto()">📷 Photo</button>
+        <button class="btn btn-primary" onclick="ux_quickAdd()">+ Add</button>
+      </div>
+      <datalist id="qaCats">${cats.map(c=>`<option value="${escapeHtml(c)}">`).join('')}</datalist>
+      <datalist id="qaUnits">${UNIT_SUGGESTIONS.map(u=>`<option value="${u}">`).join('')}</datalist>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <input type="text" class="search-input" id="invSearch" placeholder="🔍 Search stock…" value="${escapeHtml(ux_search)}" oninput="ux_search=this.value;renderInventoryList()">
+      <button class="btn btn-brass btn-sm" onclick="ux_openBulk()">💲 Change prices in bulk</button>
+      <button class="btn btn-outline btn-sm" onclick="downloadStockTemplate()">⬇ Import Template</button>
+      <label class="btn btn-outline btn-sm" style="margin:0;">⬆ Import from Excel
+        <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleStockImportFile(this.files[0]); this.value='';"></label>
+      <button class="btn btn-teal btn-sm" onclick="exportStockExcel()">⬇ Export Stock</button>
+    </div>
+    <div id="bulkWrap"></div>
+    <div id="importPreviewWrap"></div>
+    <div id="itemFormWrap"></div>
+    <hr class="stitch" style="margin:16px 0;">
+    <div id="inventoryList"></div>
+  </div>`;
+  renderInventoryList();
+}
+
+function ux_thumb(i){
+  return i.image
+    ? `<img class="thumb" src="${i.image}" onclick="showImage('${i.id}')" title="Tap to enlarge">`
+    : `<div class="thumb" onclick="setItemImage('${i.id}')" title="Add photo">📷</div>`;
+}
+function ux_in(id,vIdx,field,val,cls){
+  return `<input type="number" class="cell-in ${cls||''}" min="0" step="0.01" value="${val}" onfocus="this.select()" onkeydown="if(event.key==='Enter')this.blur()" onchange="ux_saveField('${id}',${vIdx===null?'null':vIdx},'${field}',this.value)">`;
+}
+const ux_pill=low=>low?'<span class="pill low">Low stock</span>':'<span class="pill ok">OK</span>';
+
+function renderInventoryList(){
+  const el=document.getElementById('inventoryList');if(!el)return;
+  const q=ux_search.trim().toLowerCase();
+  const list=inventory.filter(i=>!q||(i.name||'').toLowerCase().includes(q)||(i.category||'').toLowerCase().includes(q)||(i.barcode||'').includes(q)||(i.variants||[]).some(v=>(v.size||'').toLowerCase().includes(q)||(v.barcode||'').includes(q)));
+  if(!list.length){el.innerHTML=`<div class="empty-state"><h3>${inventory.length?'No match':'No stock yet'}</h3><p>${inventory.length?'Try a different search.':'Use Quick Add above to enter your first item.'}</p></div>`;return;}
+  const grouped={};list.forEach(i=>{(grouped[i.category||'Other']=grouped[i.category||'Other']||[]).push(i);});
+  el.innerHTML=Object.keys(grouped).sort().map(cat=>`
+    <h3 style="font-size:15px;margin:18px 0 8px;color:var(--brass);text-transform:uppercase;letter-spacing:.5px;">${escapeHtml(cat)}</h3>
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th></th><th>Item</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Sell Price</th><th>Status</th><th></th></tr></thead>
+      <tbody>${grouped[cat].sort((a,b)=>a.name.localeCompare(b.name)).map(ux_rows).join('')}</tbody>
+    </table></div>`).join('');
+}
+
+function ux_rows(i){
+  const low=itemIsLow(i);
+  const actions=`<div class="row-actions">
+    ${i.barcode?`<button class="btn btn-outline btn-sm" onclick="showBarcodeModal('${i.id}',null)">🏷</button>`:''}
+    <button class="btn btn-outline btn-sm" onclick="setItemImage('${i.id}')">📷 ${i.image?'Change':'Photo'}</button>
+    <button class="btn btn-outline btn-sm" onclick="openItemForm('${i.id}')">Edit</button>
+    <button class="btn btn-outline btn-sm" onclick="ux_duplicate('${i.id}')">Copy</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteItem('${i.id}')">Delete</button></div>`;
+  if(!i.hasSizes){
+    return `<tr id="r_${i.id}" class="${low?'low-stock':''}"><td>${ux_thumb(i)}</td><td><strong>${escapeHtml(i.name)}</strong></td>
+      <td>${ux_in(i.id,null,'qty',i.qty,'qty')}</td><td>${escapeHtml(i.unit)}</td>
+      <td>${ux_in(i.id,null,'costPrice',i.costPrice)}</td><td>${ux_in(i.id,null,'sellPrice',i.sellPrice)}</td>
+      <td id="s_${i.id}">${ux_pill(low)}</td><td>${actions}</td></tr>`;
+  }
+  return `<tr id="r_${i.id}" class="${low?'low-stock':''}"><td>${ux_thumb(i)}</td>
+    <td><strong>${escapeHtml(i.name)}</strong><div class="helper">${(i.variants||[]).length} sizes</div></td>
+    <td id="t_${i.id}">${itemTotalQty(i)}</td><td>${escapeHtml(i.unit)}</td><td>—</td><td>—</td>
+    <td id="s_${i.id}">${ux_pill(low)}</td><td>${actions}</td></tr>`+
+  (i.variants||[]).map((v,k)=>{const vl=variantIsLow(i,v);
+    return `<tr id="r_${i.id}_${k}" class="vrow ${vl?'low':''}"><td></td><td style="padding-left:26px;">↳ ${escapeHtml(v.size)}</td>
+      <td>${ux_in(i.id,k,'qty',v.qty,'qty')}</td><td>${escapeHtml(i.unit)}</td>
+      <td>${ux_in(i.id,k,'costPrice',v.costPrice)}</td><td>${ux_in(i.id,k,'sellPrice',v.sellPrice)}</td>
+      <td id="s_${i.id}_${k}">${ux_pill(vl)}</td><td></td></tr>`;}).join('');
+}
+
+/* ---------- inline editing (qty / cost / sell) ---------- */
+async function ux_saveField(id,vIdx,field,val){
+  const it=inventory.find(x=>x.id===id);if(!it)return;
+  const t=vIdx===null?it:(it.variants||[])[vIdx];if(!t)return;
+  t[field]=parseFloat(val)||0;
+  await saveKey('inventory',inventory);
+  ux_refreshStatus(it);updateBadges();showToast('✓ Saved');
+}
+function ux_refreshStatus(it){
+  const r=document.getElementById('r_'+it.id);if(r)r.classList.toggle('low-stock',itemIsLow(it));
+  const s=document.getElementById('s_'+it.id);if(s)s.innerHTML=ux_pill(itemIsLow(it));
+  const t=document.getElementById('t_'+it.id);if(t)t.textContent=itemTotalQty(it);
+  (it.variants||[]).forEach((v,k)=>{const low=variantIsLow(it,v);
+    const vr=document.getElementById('r_'+it.id+'_'+k);if(vr)vr.classList.toggle('low',low);
+    const vs=document.getElementById('s_'+it.id+'_'+k);if(vs)vs.innerHTML=ux_pill(low);});
+}
+
+/* ---------- quick add ---------- */
+function ux_qaPhoto(){
+  ux_pickImage(d=>{ux_qaImage=d;const b=document.getElementById('qa_photoBtn');if(b)b.textContent='✓ Photo added';});
+}
+async function ux_quickAdd(){
+  const g=id=>document.getElementById(id).value;
+  const name=g('qa_name').trim();
+  if(!name){showToast('⚠ Type the item name first');document.getElementById('qa_name').focus();return;}
+  if(inventory.some(i=>i.name.toLowerCase()===name.toLowerCase())&&!confirm('"'+name+'" is already in stock. Add it again as a separate item?'))return;
+  ux_lastCat=g('qa_cat').trim();ux_lastUnit=g('qa_unit').trim()||'pcs';
+  const it={id:uid(),name,category:ux_lastCat||'Other',unit:ux_lastUnit,hasSizes:false,
+    qty:parseFloat(g('qa_qty'))||0,costPrice:parseFloat(g('qa_cost'))||0,sellPrice:parseFloat(g('qa_sell'))||0,
+    lowStock:settings.lowStockDefault,barcode:''};
+  if(ux_qaImage)it.image=ux_qaImage;
+  inventory.push(it);ux_qaImage=null;
+  await saveKey('inventory',inventory);
+  ['qa_name','qa_qty','qa_cost','qa_sell'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('qa_photoBtn').textContent='📷 Photo';
+  document.getElementById('qa_name').focus();
+  showToast('✓ Added '+name);renderInventoryList();updateBadges();
+}
+async function ux_duplicate(id){
+  const src=inventory.find(x=>x.id===id);if(!src)return;
+  const c=JSON.parse(JSON.stringify(src));c.id=uid();c.name=src.name+' (copy)';c.barcode='';
+  (c.variants||[]).forEach(v=>v.barcode='');
+  inventory.push(c);await saveKey('inventory',inventory);
+  renderInventoryList();openItemForm(c.id);
+  showToast('Copied — change the name/prices and save');
+}
+
+/* ---------- bulk price change ---------- */
+function ux_openBulk(){
+  const cats=[...new Set(inventory.map(i=>i.category||'Other'))].sort();
+  document.getElementById('bulkWrap').innerHTML=`
+  <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;">
+    <div class="panel-header" style="margin-bottom:10px;"><h3 style="font-size:15px;">Change prices in bulk</h3><button class="modal-close" onclick="document.getElementById('bulkWrap').innerHTML=''">✕</button></div>
+    <div class="grid grid-4">
+      <div class="field"><label>Category</label><select id="bp_cat"><option value="">All items</option>${cats.map(c=>`<option>${escapeHtml(c)}</option>`).join('')}</select></div>
+      <div class="field"><label>Change by % (use − to lower)</label><input type="number" id="bp_pct" step="0.1" placeholder="e.g. 5 or -3"></div>
+      <div class="field"><label>Apply to</label><select id="bp_what"><option value="sell">Sell price</option><option value="cost">Cost price</option><option value="both">Both</option></select></div>
+      <div class="field" style="align-self:end;"><button class="btn btn-primary" onclick="ux_applyBulk()">Apply</button></div>
+    </div></div>`;
+}
+async function ux_applyBulk(){
+  const cat=document.getElementById('bp_cat').value,pct=parseFloat(document.getElementById('bp_pct').value),what=document.getElementById('bp_what').value;
+  if(!pct){showToast('⚠ Enter a percentage');return;}
+  const targets=inventory.filter(i=>!cat||(i.category||'Other')===cat);
+  if(!targets.length)return;
+  if(!confirm(`Change ${what==='both'?'sell & cost':what} price by ${pct}% on ${targets.length} item(s)?`))return;
+  const f=1+pct/100,adj=t=>{if(what!=='cost')t.sellPrice=Math.round((t.sellPrice||0)*f);if(what!=='sell')t.costPrice=Math.round((t.costPrice||0)*f);};
+  targets.forEach(i=>i.hasSizes?(i.variants||[]).forEach(adj):adj(i));
+  await saveKey('inventory',inventory);
+  document.getElementById('bulkWrap').innerHTML='';
+  showToast('✓ Prices updated');renderInventoryList();
+}
+
+/* ---------- background sync no longer wipes what you're typing ---------- */
+function rerenderIfSafe(){
+  if(!dataReady||!appUnlocked)return;
+  const tab=document.querySelector('.tab-btn.active')?.dataset.tab;
+  if(tab==='newbill'||tab==='orders')return;
+  if(tab==='inventory'){
+    const a=document.activeElement;
+    if(a&&a.closest&&a.closest('#inventoryList')){updateBadges();return;}
+    if(document.getElementById('inventoryList')){renderInventoryList();updateBadges();}
+    return;
+  }
+  if(suppressAutoRerender)return;
+  render();
+}
+
+/* ---------- bill search shows photos ---------- */
+function onQuickSearchInput(q){
+  const box=document.getElementById('quickSearchResults');q=q.trim().toLowerCase();
+  if(!q){box.style.display='none';box.innerHTML='';return;}
+  const results=[];
+  inventory.forEach(item=>{
+    if(item.hasSizes){(item.variants||[]).forEach((v,idx)=>{
+      if(item.name.toLowerCase().includes(q)||(v.size&&v.size.toLowerCase().includes(q))||(v.barcode&&v.barcode.includes(q)))
+        results.push({item,variantIdx:idx,label:item.name+' ('+v.size+') — '+v.qty+' '+item.unit+' left — '+money(v.sellPrice)});});}
+    else if(item.name.toLowerCase().includes(q)||(item.barcode&&item.barcode.includes(q)))
+      results.push({item,variantIdx:null,label:item.name+' — '+item.qty+' '+item.unit+' left — '+money(item.sellPrice)});
+  });
+  window._quickSearchResults=results;
+  box.innerHTML=results.length?results.slice(0,8).map((r,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;" onmousedown="pickQuickSearch(${i})">${r.item.image?`<img src="${r.item.image}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;">`:''}<span>${escapeHtml(r.label)}</span></div>`).join(''):'<div style="padding:10px 12px;color:var(--ink-soft);font-size:13.5px;">No matching products</div>';
+  box.style.display='block';
+}
+
+/* ---------- smarter cloud saving: only changed items are written ---------- */
+const ux_hashes={inventory:{},bills:{},returns:{},orders:{}};
+const ux_removedImg=new Set();
+async function saveKey(key,value){
+  try{localStorage.setItem(STORAGE_PREFIX+key,JSON.stringify(value));}
+  catch(e){showToast('⚠ Could not save to this device. Storage may be full or blocked.');}
+  if(!fbReady||!fbDb){updateSyncStatus('offline');return true;}
+  try{
+    updateSyncStatus('syncing');
+    if(key==='settings'){
+      await fbDb.collection('settings').doc('main').set(JSON.parse(JSON.stringify(value||{})));
+    }else if(FS_COLLECTIONS[key]){
+      const coll=fbDb.collection(FS_COLLECTIONS[key]),old=ux_hashes[key],fresh={},ops=[];
+      (value||[]).forEach(rec=>{
+        if(!rec.id)rec.id=uid();
+        const data=JSON.parse(JSON.stringify(rec));delete data.id;
+        const s=JSON.stringify(data);fresh[rec.id]=s;
+        if(old[rec.id]!==s){const id=rec.id;ops.push(b=>{
+          if(key==='inventory'){ /* merge: a photo this device hasn't loaded yet is never wiped */
+            const d=(ux_removedImg.has(id)&&!data.image)?{...data,image:firebase.firestore.FieldValue.delete()}:data;
+            b.set(coll.doc(id),d,{merge:true});
+          }else b.set(coll.doc(id),data);});}
+      });
+      const gone=new Set([...Object.keys(old),...(fsKnownIds[key]||[])]);
+      gone.forEach(id=>{if(!(id in fresh))ops.push(b=>b.delete(coll.doc(id)));});
+      for(let n=0;n<ops.length;n+=400){const b=fbDb.batch();ops.slice(n,n+400).forEach(f=>f(b));await b.commit();}
+      ux_hashes[key]=fresh;fsKnownIds[key]=new Set(Object.keys(fresh));ux_removedImg.clear();
+    }
+    updateSyncStatus('online');return true;
+  }catch(e){
+    updateSyncStatus('offline');
+    showToast('⚠ Saved on this device — will sync to other devices once back online.');return true;
+  }
+}
+</script>
+
 </body>
+  
 </html>
