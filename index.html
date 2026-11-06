@@ -3894,6 +3894,59 @@ document.getElementById('tabs').addEventListener('click',function(e){
   window.scrollTo(0,0);
 });
 </script>
+<script>/* ===== SYNC FIX: erased data must never come back from an old device cache ===== */
+var ux_syncFixLoaded=true;
+function attachCloudListeners(){
+  fbDb.collection('settings').doc('main').onSnapshot(function(doc){
+    if(doc.exists){
+      settings={...DEFAULT_SETTINGS,...doc.data()};
+      localStorage.setItem(STORAGE_PREFIX+'settings',JSON.stringify(settings));
+      rerenderIfSafe();
+    }else if(!fsSeeded.settings){
+      fsSeeded.settings=true;
+      fbDb.collection('settings').doc('main').set(settings||DEFAULT_SETTINGS);
+    }
+    updateSyncStatus('online');
+    markSettingsConfirmed();
+  },function(){updateSyncStatus('offline');});
+
+  var coll={
+    inventory:{get:function(){return inventory;},set:function(v){inventory=v;}},
+    bills:{get:function(){return bills;},set:function(v){bills=v;}},
+    returns:{get:function(){return returns;},set:function(v){returns=v;}},
+    orders:{get:function(){return orders;},set:function(v){orders=v;}}
+  };
+  Object.keys(FS_COLLECTIONS).forEach(function(key){
+    var state=coll[key];
+    fbDb.collection(FS_COLLECTIONS[key]).onSnapshot(async function(snap){
+      if(snap.empty&&snap.metadata.fromCache)return; /* not a real answer from the server yet */
+      if(snap.empty&&!fsSeeded[key]&&state.get().length>0){
+        var initialized;
+        try{
+          var d=await fbDb.collection('settings').doc('main').get({source:'server'});
+          initialized=d.exists;
+        }catch(e){return;} /* cannot confirm: do nothing rather than guess */
+        if(!initialized){ /* brand-new cloud: first-time upload of this device's data */
+          fsSeeded[key]=true;
+          pushCollectionToCloud(key,state.get());
+          return;
+        }
+        /* shop already set up and this collection is empty = it was erased: drop the stale local copy */
+      }
+      fsSeeded[key]=true;
+      var arr=snap.docs.map(function(d){return {id:d.id,...d.data()};});
+      if(key==='bills'){
+        arr.forEach(function(b){if(!b.payment){b.payment={status:'paid',method:'cash',amountPaid:b.total,amountDue:0,payments:[{date:b.date,amount:b.total,method:'cash'}],lastReminded:null};}});
+      }
+      state.set(arr);
+      fsKnownIds[key]=new Set(arr.map(function(r){return r.id;}));
+      if(typeof ux_hashes!=='undefined'&&arr.length===0)ux_hashes[key]={};
+      localStorage.setItem(STORAGE_PREFIX+key,JSON.stringify(arr));
+      rerenderIfSafe();
+    },function(){updateSyncStatus('offline');});
+  });
+}
+</script>
 </body>
   
 </html>
