@@ -3764,6 +3764,136 @@ async function saveKey(key,value){
 })();
 </script>
 
+<script>/* ===== MOBILE + LOOK UPGRADE ===== */
+var ux_themeLoaded=true;
+(function(){
+  var m=document.createElement('meta');m.name='theme-color';m.content='#4A3223';document.head.appendChild(m);
+  var s=document.createElement('style');
+  s.textContent=`
+  :root{--radius:16px;--shadow:0 4px 18px rgba(43,32,22,.09)}
+  body{background:radial-gradient(1100px 480px at 100% -8%,#EADFCB 0,transparent 60%),var(--bg)}
+  .topbar{background:linear-gradient(135deg,#4A3223,#6B4A34 60%,#8A6444);box-shadow:0 4px 16px rgba(43,32,22,.25)}
+  .panel{border-radius:var(--radius);box-shadow:var(--shadow);animation:uxfade .3s ease}
+  @keyframes uxfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .btn{border-radius:12px;min-height:42px;justify-content:center;transition:transform .08s}
+  .btn:active{transform:scale(.97)}
+  .btn-sm{min-height:36px}
+  .btn-primary{background:linear-gradient(135deg,#7A5640,#5A3E2B);box-shadow:0 3px 10px rgba(74,50,35,.3)}
+  .btn-teal{background:linear-gradient(135deg,#4A7468,#33564D);box-shadow:0 3px 10px rgba(46,74,66,.28)}
+  .btn-brass{background:linear-gradient(135deg,#C2A06A,#A07D48)}
+  input[type=text],input[type=number],input[type=tel],select,textarea{border-radius:12px;min-height:44px;background:#fff}
+  .stat-card{border-radius:16px;position:relative;overflow:hidden;background:#fff;box-shadow:var(--shadow);padding-left:22px}
+  .stat-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--brass)}
+  .stat-card:nth-child(2)::before{background:var(--danger)}
+  .stat-card:nth-child(3)::before{background:var(--teal)}
+  .stat-card:nth-child(4)::before{background:var(--walnut)}
+  .stat-card.alert{background:var(--danger-bg)}
+  .totals-box{background:linear-gradient(180deg,#fff,var(--surface-2));border-radius:16px;box-shadow:var(--shadow)}
+  .quickadd{background:linear-gradient(135deg,#FFF9EE,#F7EEDC);border:1.5px solid #E7D2AC;border-radius:16px}
+  .thumb{border-radius:12px}
+  .pill{border-radius:999px}
+  .toast{border-radius:14px}
+  .tab-btn::before{margin-right:6px}
+  .tab-btn[data-tab=dashboard]::before{content:"🏠"}
+  .tab-btn[data-tab=inventory]::before{content:"📦"}
+  .tab-btn[data-tab=newbill]::before{content:"🧾"}
+  .tab-btn[data-tab=bills]::before{content:"📄"}
+  .tab-btn[data-tab=ledger]::before{content:"📒"}
+  .tab-btn[data-tab=returns]::before{content:"↩️"}
+  .tab-btn[data-tab=orders]::before{content:"🚚"}
+  .tab-btn[data-tab=settings]::before{content:"⚙️"}
+
+  @media(max-width:720px){
+    body{padding-bottom:96px}
+    input,select,textarea{font-size:16px!important}
+    .topbar{padding:12px 14px}
+    .topbar .date{display:none}
+    .topbar .brand h1{font-size:19px}
+    .tabs{position:fixed;bottom:0;left:0;right:0;top:auto;z-index:50;padding:6px 6px calc(6px + env(safe-area-inset-bottom));gap:2px;background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-top:1px solid var(--border);box-shadow:0 -4px 20px rgba(43,32,22,.12)}
+    .tab-btn{flex:1 0 62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;font-size:10.5px;border:0;background:transparent;border-radius:12px}
+    .tab-btn::before{font-size:20px;margin:0}
+    .tab-btn.active{background:#F3E8D6}
+    .tab-btn.active::after{display:none}
+    .tab-btn .badge{position:absolute;top:0;right:6px;margin:0}
+    .panel{margin:10px 10px 12px;padding:16px;border-radius:18px}
+    .panel-header h2{font-size:20px}
+    .toast{bottom:92px;max-width:90vw;text-align:center}
+    .stat-card .value{font-size:26px}
+
+    /* tables become cards */
+    #app table,#app tbody,#app tr,#app td{display:block;width:100%}
+    #app thead{display:none}
+    #app tr{background:#fff;border:1px solid var(--border);border-radius:16px;margin:0 0 12px;padding:10px 12px;box-shadow:0 2px 8px rgba(43,32,22,.06)}
+    #app td{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:right;border:0!important;padding:5px 0!important;background:transparent!important}
+    #app td::before{content:attr(data-label);font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--ink-soft);text-align:left;flex-shrink:0}
+    #app td[data-label=""]::before{display:none}
+    #app td:empty{display:none}
+    #app tr.low-stock,#app tr.vrow.low,#app tr.variant-row.low{background:var(--danger-bg);border-left:4px solid var(--danger)}
+    #app tr.vrow,#app tr.variant-row{width:auto;margin:-6px 0 12px 14px;background:var(--surface-2);box-shadow:none}
+    #app tr:has(.thumb){display:grid;grid-template-columns:56px 1fr;column-gap:12px}
+    #app tr:has(.thumb)>td{grid-column:1/-1}
+    #app tr:has(.thumb)>td:nth-child(1){grid-column:1;grid-row:1}
+    #app tr:has(.thumb)>td:nth-child(2){grid-column:2;grid-row:1;justify-content:flex-start;text-align:left;font-size:16px;flex-wrap:wrap}
+    #app tr:has(.thumb)>td:nth-child(2)::before{display:none}
+    #app td:last-child{display:block}
+    #app td:last-child::before{display:none}
+    .row-actions{justify-content:flex-end}
+    .row-actions .btn{flex:1 1 auto}
+    .cell-in{width:120px;text-align:right}
+
+    /* billing lines as cards */
+    #billLines>.bill-line:first-child{display:none}
+    .bill-line{grid-template-columns:1fr 1fr;gap:10px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:10px}
+    .bill-line>div:nth-child(1),.bill-line>div:nth-child(2){grid-column:1/-1}
+    .bill-line>div:nth-child(2):not(:has(select)){display:none}
+    .bill-line>div:nth-child(7){grid-column:1/-1;justify-self:end;padding-top:0!important}
+    .bill-line>div::before{display:block;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px}
+    .bill-line>div:nth-child(1)::before{content:"Item"}
+    .bill-line>div:nth-child(2)::before{content:"Size"}
+    .bill-line>div:nth-child(3)::before{content:"Qty"}
+    .bill-line>div:nth-child(4)::before{content:"Price / unit"}
+    .bill-line>div:nth-child(5)::before{content:"Discount %"}
+    .bill-line>div:nth-child(6)::before{content:"Line total"}
+    .bill-line .line-total{padding-top:0;font-size:17px;color:var(--walnut-dark)}
+    .totals-box{max-width:none}
+
+    /* add-stock forms */
+    .qa-grid>div:first-child,.qa-grid>.btn-primary{grid-column:1/-1}
+    #variantRows .variant-row{grid-template-columns:1fr 1fr!important;background:#fff;border:1px solid var(--border);border-radius:14px;padding:10px;margin-bottom:10px}
+    #variantRows .variant-row:first-child{display:none}
+    #variantRows .variant-row>div:nth-child(6){grid-column:1/-1}
+    #variantRows .variant-row>div:nth-child(7){grid-column:1/-1;justify-self:end}
+    #variantRows .variant-row>div::before{display:block;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink-soft);margin-bottom:3px}
+    #variantRows .variant-row>div:nth-child(1)::before{content:"Size"}
+    #variantRows .variant-row>div:nth-child(2)::before{content:"Qty"}
+    #variantRows .variant-row>div:nth-child(3)::before{content:"Cost"}
+    #variantRows .variant-row>div:nth-child(4)::before{content:"Sell"}
+    #variantRows .variant-row>div:nth-child(5)::before{content:"Low at"}
+    #variantRows .variant-row>div:nth-child(6)::before{content:"Barcode"}
+
+    .invoice-sheet{padding:20px}
+    .invoice-actions{padding:12px;flex-wrap:wrap}
+    .invoice-actions .btn{flex:1 1 140px}
+  }`;
+  document.head.appendChild(s);
+})();
+
+/* label every table cell so phones can show it as a card */
+function ux_labelTables(){
+  document.querySelectorAll('#app table').forEach(function(t){
+    var heads=[].map.call(t.querySelectorAll('thead th'),function(h){return h.textContent.trim();});
+    t.querySelectorAll('tbody tr').forEach(function(tr){
+      [].forEach.call(tr.children,function(td,i){ if(td.dataset.label===undefined) td.dataset.label=heads[i]||''; });
+    });
+  });
+}
+new MutationObserver(ux_labelTables).observe(document.getElementById('app'),{childList:true,subtree:true});
+document.getElementById('tabs').addEventListener('click',function(e){
+  var b=e.target.closest('.tab-btn');if(!b)return;
+  try{b.scrollIntoView({inline:'center',block:'nearest'});}catch(x){}
+  window.scrollTo(0,0);
+});
+</script>
 </body>
   
 </html>
